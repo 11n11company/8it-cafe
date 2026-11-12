@@ -48,12 +48,20 @@ sequenceDiagram
     Cloud-->>Tablet: 201 Created (Invoice #INV-2026-00042)
     Note over Cloud,Printer: CRITICAL: NO KOT IS CREATED OR PRINTED!
 
-    Note over Cashier,DB: STEP 2: MANUAL CASHIER TRIGGER
+    Note over Cashier,DB: STEP 2: MANUAL CASHIER TRIGGER & KITCHEN FILTERING
     Cashier->>Tablet: Taps manual "PRINT KOT FOR KITCHEN" button
     Tablet->>Cloud: POST /api/v1/kot/invoices/INV-2026-00042/print-kot
-    Cloud->>DB: INSERT into kot_tickets & print_jobs (status: 'PENDING')
-    Cloud-->>Tablet: 202 Accepted ("KOT Queued")
-    Tablet->>Cashier: UI shows "KOT Queued" checkmark
+    Cloud->>DB: Query: COUNT(*) FROM invoice_items WHERE invoice_id = :id AND is_kitchen_item_snapshot = TRUE
+    alt Zero Kitchen Items (All items are packaged retail)
+        Cloud-->>Tablet: 422 Unprocessable Entity ("Retail items only; no kitchen preparation required")
+        Tablet->>Cashier: UI Alert: "No kitchen items in this order" (NO KOT Created)
+    else Has Kitchen-Eligible Items
+        Cloud->>DB: INSERT into kots
+        Cloud->>DB: INSERT into kot_items (FILTERED: only is_kitchen_item_snapshot = TRUE)
+        Cloud->>DB: INSERT into print_jobs (status: 'PENDING')
+        Cloud-->>Tablet: 202 Accepted ("KOT Queued")
+        Tablet->>Cashier: UI shows "KOT Queued" checkmark
+    end
 
     Note over Agent,Printer: STEP 3: QUEUE POLLING & EXECUTION
     loop Every 1500ms
@@ -89,7 +97,16 @@ One of the most vital architectural rules is: **Print failure must NEVER cancel,
 
 ## 4. Physical Thermal KOT Layout (80mm ESC/POS)
 
-Unlike customer invoices, **a KOT must omit all financial prices and GST values**. Kitchen staff requires fast, legible food preparation information:
+Unlike customer invoices, **a KOT must omit all financial prices and GST values, and must ONLY contain items requiring kitchen preparation (`is_kitchen_item_snapshot = TRUE`)**. 
+
+### Example Comparison: Customer Invoice vs. Kitchen KOT
+
+Consider an order containing four items across both brands:
+1. *Cafe Company*: 2 × Iced Americano (`is_kitchen_item = TRUE`) + 1 × Sparkling Water 500ml (`is_kitchen_item = FALSE`)
+2. *Brownie Shop*: 1 × Warm Sizzler Brownie (`is_kitchen_item = TRUE`) + 1 × Packaged Gift Box of 6 (`is_kitchen_item = FALSE`)
+
+- **The Customer Invoice** bills and itemizes **all 4 items**.
+- **The Kitchen KOT** prints **only the 2 kitchen-prepared items** (Sparkling Water and Gift Box are omitted):
 
 ```
 ================================================
@@ -103,18 +120,23 @@ QTY   ITEM DESCRIPTION             NOTES
 ------------------------------------------------
 [ BRAND: CAFE COMPANY ]
  2    Iced Americano               * Extra ice *
- 1    Cappuccino                   * Skim milk *
 
 [ BRAND: BROWNIE SHOP ]
- 1    Classic Fudge Brownie        * Warm up *
- 2    Walnut Brownie               --
+ 1    Warm Sizzler Brownie         * Extra sauce *
 ------------------------------------------------
-TOTAL ITEMS: 6
+KITCHEN ITEMS: 3 (2 unique lines)
 ================================================
            [ END OF KITCHEN ORDER ]             
 
    (Paper Feed 3 lines & Full Cut Command)
 ```
+
+### Zero-KOT Scenario
+If a customer purchases **only** retail packaged goods (e.g., 2 bottles of Sparkling Water and 1 Packaged Gift Box of 6):
+1. The invoice is created and paid normally.
+2. If the cashier taps "Print KOT", the system verifies `COUNT(is_kitchen_item_snapshot = TRUE) = 0`.
+3. The system returns an informative alert: *"Order contains packaged retail items only. No kitchen preparation required."*
+4. **No empty KOT is generated, and no print job is dispatched.**
 
 ### Thermal Ticket Features:
 - **Character Width**: 48 characters per line (standard 80mm thermal font A).

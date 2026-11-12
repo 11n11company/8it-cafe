@@ -62,6 +62,10 @@ The kitchen ticket generation process must strictly adhere to the following sequ
 - **FR-1.1 Brand Association**: Every category and product must be linked to a specific brand (`Cafe Company` or `Brownie Shop`).
 - **FR-1.2 Pricing & Tax Codes**: Every product must have an active selling price and an associated HSN/SAC code with designated GST rate (e.g., 5% GST split as 2.5% CGST + 2.5% SGST).
 - **FR-1.3 Availability Toggle**: Cashiers or managers can toggle items as in-stock or out-of-stock.
+- **FR-1.4 Kitchen Preparation Eligibility (`is_kitchen_item`)**:
+  - Every product has a mandatory `is_kitchen_item` boolean setting (default `FALSE`).
+  - **`is_kitchen_item = TRUE`**: Items requiring kitchen preparation or barista assembly (e.g., *Cafe Company* Hot Cappuccino, Iced Americano, Sandwiches; *Brownie Shop* Made-to-order Sizzler Brownie with Ice Cream).
+  - **`is_kitchen_item = FALSE`**: Packaged retail goods or pre-packed items requiring zero kitchen preparation (e.g., *Cafe Company* Packaged Mineral Water 500ml, Cold Soda Cans; *Brownie Shop* Pre-packaged Gift Box of 6 Brownies, Retail Chocolate Bars).
 
 ### 3.2 Counter POS & Cart Operations
 - **FR-2.1 Combined Cart**: Cashiers can add products from both brands into a single active cart.
@@ -71,23 +75,32 @@ The kitchen ticket generation process must strictly adhere to the following sequ
 
 ### 3.3 Checkout, Invoicing & Payments
 - **FR-3.1 Sequential Invoice Numbering**: The system generates unique, sequential, human-readable tax invoice numbers per legal company.
-- **FR-3.2 Combined Tax Invoice**:
+- **FR-3.2 Combined Tax Invoice (All Items Included)**:
   - Displays parent company legal details and shared GSTIN.
+  - **Includes all purchased products regardless of their kitchen preparation eligibility.**
   - Groups or tags line items by their brand.
   - Provides a complete tax breakdown: Taxable Value, CGST, SGST/UTGST, and Grand Total.
 - **FR-3.3 Payment Modes**: Supports Cash, UPI (QR code), and Debit/Credit Card. Multiple payment splits per invoice can be supported if required.
-- **FR-3.4 Invoice Immutability**: Once an invoice is completed and paid, its line items and pricing are permanently locked. Changes require a supervisor void/refund with an audit log entry.
+- **FR-3.4 Invoice Immutability & Kitchen Flag Snapshot**:
+  - Once an invoice is completed and paid, its line items and pricing are permanently locked.
+  - Each invoice line captures an immutable `is_kitchen_item_snapshot` copied directly from the product at checkout. Changes to a product's kitchen flag in the catalog will never alter past invoices or KOT eligibility of past sales.
 
 ### 3.4 Manual KOT Generation & Print Queue
 - **FR-4.1 Manual Trigger**: After invoice completion, the UI displays a prominent **"Print KOT"** button.
-- **FR-4.2 KOT Data Payload**: The KOT ticket must display:
+- **FR-4.2 Kitchen Item Filtering**:
+  - The KOT creation logic evaluates `invoice_items.is_kitchen_item_snapshot = TRUE`.
+  - **Only kitchen-eligible items appear on the KOT.** Packaged retail items (e.g., bottled water, gift boxes) are omitted.
+- **FR-4.3 Zero-Kitchen Item Guard (No Empty KOTs)**:
+  - If an invoice contains **only packaged retail goods** (`is_kitchen_item_snapshot = FALSE` for all lines), the system **must not generate an empty KOT**.
+  - The UI informs the cashier: *"Order contains retail/packaged items only. No kitchen preparation required."* The "Print KOT" action is suppressed or gracefully alerts the cashier without dispatching an empty ticket.
+- **FR-4.4 KOT Data Payload**: The physical KOT ticket displays:
   - KOT Number & Associated Invoice Number
   - Timestamp
-  - Brand header or section dividers (clearly separating Cafe Company items from Brownie Shop items)
-  - Item names, quantities, and item-specific preparation notes
+  - Brand headers (separating Cafe Company items from Brownie Shop items)
+  - Eligible item names, quantities, and item-specific preparation notes
   - Explicit omission of financial pricing and GST (kitchen staff does not need pricing details)
-- **FR-4.3 Reprinting Support**: Cashiers can trigger a reprint of a previously printed KOT with an explicit `[DUPLICATE / REPRINT]` watermark.
-- **FR-4.4 Cloud Print Queue**: Print requests are stored in a database table (`print_jobs`) with statuses: `PENDING`, `IN_PROGRESS`, `COMPLETED`, `FAILED`.
+- **FR-4.5 Reprinting Support**: Cashiers can trigger a reprint of an existing KOT with an explicit `[DUPLICATE / REPRINT]` watermark.
+- **FR-4.6 Cloud Print Queue**: Print requests are stored in a database table (`print_jobs`) with statuses: `PENDING`, `CLAIMED`, `COMPLETED`, `FAILED`.
 
 ### 3.5 Sales & Financial Reporting
 - **FR-5.1 Consolidated Sales Report**: Aggregate metrics including Gross Sales, Net Taxable Sales, Total CGST, Total SGST, and Total Revenue across both brands for any selected date range.

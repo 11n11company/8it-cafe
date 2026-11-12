@@ -255,7 +255,7 @@ CREATE TABLE products (
     hsn_sac_code VARCHAR(10) NOT NULL DEFAULT '996331', -- Restaurant service (996331) or Goods (e.g. 1905)
     base_price NUMERIC(12, 2) NOT NULL CHECK (base_price >= 0),
     is_tax_inclusive BOOLEAN NOT NULL DEFAULT TRUE,     -- Retail menu price includes GST
-    is_kitchen_item BOOLEAN NOT NULL DEFAULT TRUE,     -- If false, excluded from KOT (e.g. packaged bottles)
+    is_kitchen_item BOOLEAN NOT NULL DEFAULT FALSE,    -- TRUE = requires kitchen prep; FALSE = packaged retail
     is_active BOOLEAN NOT NULL DEFAULT TRUE,
     created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -339,7 +339,7 @@ CREATE TABLE invoice_items (
     item_name_snapshot VARCHAR(150) NOT NULL,
     sku_snapshot VARCHAR(50),
     hsn_sac_code_snapshot VARCHAR(10) NOT NULL,
-    is_kitchen_item_snapshot BOOLEAN NOT NULL DEFAULT TRUE,
+    is_kitchen_item_snapshot BOOLEAN NOT NULL,  -- Frozen copy of products.is_kitchen_item at checkout
 
     -- QUANTITY & VALUE ARITHMETIC
     quantity INT NOT NULL CHECK (quantity > 0),
@@ -588,10 +588,16 @@ In hospitality retail, product names, menu prices, tax rates, brand descriptions
    - `company_legal_name_snapshot`, `company_trade_name_snapshot`, `company_gstin_snapshot`, `company_address_snapshot`, `company_state_code_snapshot`, `cashier_name_snapshot`.
 2. **On `invoice_items`**:
    - `brand_name_snapshot`, `brand_code_snapshot`, `item_name_snapshot`, `sku_snapshot`, `hsn_sac_code_snapshot`, `unit_price`, `tax_rate_percentage`, `cgst_rate`, `cgst_amount`, `sgst_rate`, `sgst_amount`, `igst_rate`, `igst_amount`.
+   - **`is_kitchen_item_snapshot`**: Frozen boolean indicating whether the item required kitchen preparation at the exact moment of sale.
 3. **On `kot_items`**:
    - `brand_name_snapshot`, `item_name_snapshot`, `quantity`, `preparation_notes`.
 
-**Guarantee**: Once an invoice is inserted, the catalog can be updated, deleted, or restructured without altering past financial or tax records.
+### The KOT Product Eligibility Invariant
+- KOT generation queries **`invoice_items.is_kitchen_item_snapshot = TRUE`**, **NEVER** joining dynamically with the `products` table.
+- If a product is later toggled from `is_kitchen_item = TRUE` to `FALSE` (or vice versa), historical invoices and reprints of earlier KOTs retain their exact historical preparation eligibility.
+- Customer invoices include **all purchased products** regardless of `is_kitchen_item_snapshot`. KOTs include **only eligible preparation items**.
+
+**Guarantee**: Once an invoice is inserted, the catalog can be updated, deleted, or restructured without altering past financial, tax, or kitchen ticket records.
 
 ---
 
@@ -687,9 +693,46 @@ RETURNING current_number;
 2. **Phase 2: Manual Cashier Trigger (Independent Transaction)**
    - Cashier taps "Print KOT" on the tablet.
    - Separate endpoint `POST /kot/invoices/:id/print-kot` executes.
-   - Inserts record into `kots` and `print_jobs` (`status = 'PENDING'`).
 
-### 9.2 Safe Queue Claiming & Lease Recovery Pattern
+### 9.2 Kitchen Preparation Filtering & Zero-KOT Guard
+Kitchen order tickets must **only** include products that require kitchen preparation or barista assembly:
+
+```sql
+-- Step 1: Pre-check - Count kitchen-eligible items via snapshot
+SELECT COUNT(*) 
+FROM invoice_items 
+WHERE invoice_id = :invoiceId 
+  AND is_kitchen_item_snapshot = TRUE;
+
+-- RULE: If count = 0 (order contains ONLY packaged retail goods):
+-- Abort KOT creation immediately.
+-- Return HTTP 422: "Order contains packaged retail items only. No kitchen preparation required."
+-- DO NOT insert empty records into kots or print_jobs!
+
+-- Step 2: Insert into kots (Executed ONLY if count > 0)
+INSERT INTO kots (id, company_id, invoice_id, kot_number, cashier_id, is_reprint, reprint_count)
+VALUES (:kotId, :companyId, :invoiceId, :kotNumber, :cashierId, FALSE, 0);
+
+-- Step 3: Populate kot_items strictly using the frozen snapshot
+INSERT INTO kot_items (kot_id, invoice_item_id, brand_id, brand_name_snapshot, item_name_snapshot, quantity, preparation_notes)
+SELECT 
+    :kotId,
+    ii.id,
+    ii.brand_id,
+    ii.brand_name_snapshot,
+    ii.item_name_snapshot,
+    ii.quantity,
+    ii.notes
+FROM invoice_items ii
+WHERE ii.invoice_id = :invoiceId
+  AND ii.is_kitchen_item_snapshot = TRUE;
+
+-- Step 4: Insert into print_jobs queue
+INSERT INTO print_jobs (company_id, kot_id, printer_id, payload, status)
+VALUES (:companyId, :kotId, :printerId, :formattedTicketPayload, 'PENDING');
+```
+
+### 9.3 Safe Queue Claiming & Lease Recovery Pattern
 Multiple agents or polling workers safely claim jobs without contention:
 
 ```sql
@@ -716,12 +759,13 @@ WHERE id = (
 RETURNING *;
 ```
 
-### 9.3 Controlled Reprint Workflow
+### 9.4 Controlled Reprint Workflow
 - Reprints require cashier selection and a mandatory reason (e.g. "Kitchen misplaced original ticket").
 - A new record is inserted into `kots` with `is_reprint = TRUE`, `reprint_of_kot_id = :originalKotId`, and incremented `reprint_count`.
+- Reprints also re-query `invoice_items.is_kitchen_item_snapshot = TRUE`, ensuring identical preparation scope.
 - The print job payload renders `*** DUPLICATE / REPRINT ***` in bold text at the top of the thermal ticket.
 
-### 9.4 Proof of Failure Decoupling
+### 9.5 Proof of Failure Decoupling
 If the kitchen printer runs out of paper:
 1. The print agent fails the socket connection.
 2. The agent calls `POST /print-jobs/:id/status` with `FAILED` and error details.
@@ -751,7 +795,7 @@ If the kitchen printer runs out of paper:
 
 ## 11. Concrete Example: Data Relationship Walkthrough
 
-Let us trace a single transaction where customer orders 1 Iced Americano (Cafe Company) and 1 Fudge Brownie (Brownie Shop):
+Let us trace a single multi-brand counter transaction containing both **kitchen-prepared items** and **packaged retail goods**:
 
 ```
 1. [companies]
@@ -762,35 +806,50 @@ Let us trace a single transaction where customer orders 1 Iced Americano (Cafe C
    id: 'b102' | company_id: 'c111' | code: 'BS' | name: 'Brownie Shop'
 
 3. [products]
-   id: 'p501' | brand_id: 'b101' | name: 'Iced Americano' | price: 180.00 | gst_rate: 5%
-   id: 'p502' | brand_id: 'b102' | name: 'Fudge Brownie'  | price: 150.00 | gst_rate: 5%
+   -- CAFE COMPANY: 1 Kitchen-prepared item + 1 Packaged retail item
+   id: 'p501' | brand_id: 'b101' | name: 'Iced Americano'              | is_kitchen_item: TRUE  | price: 180.00 | gst: 5%
+   id: 'p502' | brand_id: 'b101' | name: 'Natural Sparkling Water 500ml'| is_kitchen_item: FALSE | price:  60.00 | gst: 18%
 
-4. [invoices] (Created atomically on checkout)
+   -- BROWNIE SHOP: 1 Kitchen-prepared item + 1 Packaged retail item
+   id: 'p503' | brand_id: 'b102' | name: 'Warm Sizzler Brownie'        | is_kitchen_item: TRUE  | price: 220.00 | gst: 5%
+   id: 'p504' | brand_id: 'b102' | name: 'Packaged Gift Box of 6'       | is_kitchen_item: FALSE | price: 450.00 | gst: 18%
+
+4. [invoices] (Created atomically on checkout - INCLUDES ALL 4 PURCHASED PRODUCTS)
    id: 'inv-901' | invoice_number: 'INV/2026-27/00042'
-   subtotal_gross: 330.00 | taxable_amount: 314.28 | cgst: 7.86 | sgst: 7.86 | grand_total: 330.00
-   payment_status: 'PAID'
+   subtotal_gross: 910.00 | grand_total: 910.00 | payment_status: 'PAID'
 
-5. [invoice_items]
-   - Item 1: invoice_id: 'inv-901' | brand: 'Cafe Company' | name: 'Iced Americano' | qty: 1 | total: 180.00
-   - Item 2: invoice_id: 'inv-901' | brand: 'Brownie Shop' | name: 'Fudge Brownie'  | qty: 1 | total: 150.00
+5. [invoice_items] (All 4 products recorded with frozen is_kitchen_item_snapshot)
+   - Line 1: 'inv-901' | Brand: 'Cafe Company' | Item: 'Iced Americano'               | is_kitchen_item_snapshot: TRUE  | total: 180.00
+   - Line 2: 'inv-901' | Brand: 'Cafe Company' | Item: 'Natural Sparkling Water 500ml' | is_kitchen_item_snapshot: FALSE | total:  60.00
+   - Line 3: 'inv-901' | Brand: 'Brownie Shop' | Item: 'Warm Sizzler Brownie'         | is_kitchen_item_snapshot: TRUE  | total: 220.00
+   - Line 4: 'inv-901' | Brand: 'Brownie Shop' | Item: 'Packaged Gift Box of 6'        | is_kitchen_item_snapshot: FALSE | total: 450.00
 
 6. [payments]
-   id: 'pay-301' | invoice_id: 'inv-901' | method: 'UPI' | amount: 330.00 | status: 'SUCCESS'
+   id: 'pay-301' | invoice_id: 'inv-901' | method: 'UPI' | amount: 910.00 | status: 'SUCCESS'
 
-   ===> AT THIS POINT: BILL IS DONE. ZERO KOT TICKETS EXIST. <===
+   ===> AT THIS POINT: BILL IS FULLY COMMITTED. ZERO KOT TICKETS EXIST. <===
 
 7. [kots] (Created ONLY when cashier clicks "Print KOT")
    id: 'kot-701' | invoice_id: 'inv-901' | kot_number: 'KOT/2026-27/00042' | is_reprint: FALSE
 
-8. [kot_items]
-   - Item 1: kot_id: 'kot-701' | brand: 'Cafe Company' | item: 'Iced Americano' | qty: 1
-   - Item 2: kot_id: 'kot-701' | brand: 'Brownie Shop' | item: 'Fudge Brownie'  | qty: 1
+8. [kot_items] (FILTERED: ONLY CONTAINS THE 2 KITCHEN-PREPARED ITEMS!)
+   - Item 1: kot_id: 'kot-701' | Brand: 'Cafe Company' | Item: 'Iced Americano'        | qty: 1 | notes: 'Extra ice'
+   - Item 2: kot_id: 'kot-701' | Brand: 'Brownie Shop' | Item: 'Warm Sizzler Brownie' | qty: 1 | notes: 'Extra chocolate sauce'
+   
+   (Notice: Sparkling Water and Packaged Gift Box are EXCLUDED from the kitchen ticket!)
 
 9. [print_jobs]
    id: 'job-101' | kot_id: 'kot-701' | printer: 'KITCHEN-WIFI-01' | status: 'PENDING'
 
 10. [print_attempts]
-   id: 'att-001' | print_job_id: 'job-101' | attempt: 1 | status: 'SUCCESS' | duration_ms: 240
+   id: 'att-001' | print_job_id: 'job-101' | attempt: 1 | status: 'SUCCESS' | duration_ms: 215
+
+11. ZERO-KOT SCENARIO (Customer buys only Sparkling Water & Packaged Gift Box):
+    - Invoice #INV-2026-27/00043 is created and paid for ₹510.00.
+    - Cashier views completed order.
+    - Because COUNT(is_kitchen_item_snapshot = TRUE) = 0:
+      - The UI displays: "Retail/Packaged items only. No kitchen preparation required."
+      - The system blocks empty KOT creation. No records written to `kots` or `print_jobs`.
 ```
 
 ---

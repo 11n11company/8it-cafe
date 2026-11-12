@@ -94,6 +94,23 @@ This document records the critical architectural decisions (ADRs), trade-offs, a
 
 ---
 
+### ADR-09: Kitchen Preparation Filtering & Frozen Snapshot Eligibility
+- **Context**: In counter operations, customers frequently order a mix of freshly prepared items (e.g., brewed coffees, heated desserts) and pre-packaged retail goods (e.g., bottled beverages, sealed confectionery gift boxes). Sending packaged retail goods to the kitchen printer wastes thermal paper, causes operational noise, and confuses kitchen staff. Furthermore, if a product is reclassified in the catalog in the future, past sales and reprints must retain their exact historical preparation status.
+- **Decision**:
+  1. Add `is_kitchen_item BOOLEAN NOT NULL DEFAULT FALSE` to the `products` table.
+  2. Add `is_kitchen_item_snapshot BOOLEAN NOT NULL` to the `invoice_items` table, populated from `products.is_kitchen_item` during checkout.
+  3. The customer invoice includes **all purchased products** regardless of kitchen eligibility.
+  4. The manual KOT generation query filters **strictly** by `WHERE ii.invoice_id = :invoiceId AND ii.is_kitchen_item_snapshot = TRUE`. It never joins dynamically against `products`.
+  5. **Zero-Kitchen Item Guard**: If an invoice contains only packaged retail items (`is_kitchen_item_snapshot = FALSE` across all lines), the system enforces a strict guard: it returns an informative UI notice (*"Retail/packaged items only. No kitchen preparation required."*) and **refuses to create an empty KOT ticket or empty print job**.
+  6. Preserves snapshots of brand name, item name, and quantity on `kot_items`.
+- **Concrete Dual-Brand Example**:
+  - *Cafe Company*: "Iced Americano" (`is_kitchen_item = TRUE`) vs. "Natural Sparkling Water 500ml" (`is_kitchen_item = FALSE`).
+  - *Brownie Shop*: "Warm Sizzler Brownie with Gelato" (`is_kitchen_item = TRUE`) vs. "Packaged Brownie Gift Box (6 pcs)" (`is_kitchen_item = FALSE`).
+  - In a combined order with all 4 items, the customer invoice bills all 4 items (₹910.00), while the kitchen KOT prints **only** the Iced Americano and Warm Sizzler Brownie.
+- **Rationale**: Keeps kitchen tickets focused strictly on culinary tasks, eliminates empty print runs, and protects historical records from future catalog changes.
+
+---
+
 ## 3. Assumptions Flagged for Accountant & Legal Verification
 
 The following assumptions have been incorporated into the database design based on hospitality best practices in India. **They must be reviewed and confirmed by the client's Chartered Accountant (CA) or tax consultant prior to production deployment**:
@@ -106,3 +123,4 @@ The following assumptions have been incorporated into the database design based 
 | **4** | **Invoice Rounding (Section 170)** | In accordance with Section 170 of the CGST Act, fractional amounts are rounded to the nearest whole rupee at the grand total level (`rounding_adjustment NUMERIC(6, 2)`). | Does the accountant prefer half-up rounding to the nearest rupee at the invoice grand total level, or must individual line items reflect unrounded fractions? |
 | **5** | **Invoice Serial Number Format** | Serial numbers follow the format `INV/2026-27/00042` (16 characters, alphanumeric with `/` and `-`). | Rule 46(b) of CGST Rules mandates consecutive serial numbers not exceeding 16 characters for each financial year. Is the prefix `INV/26-27/` or `CC-BS/26-27/` preferred by the company? |
 | **6** | **HSN / SAC Code Reporting** | Default HSN for restaurant/cafe items is set to `996331` (Services). Brownie Shop baked items default to `1905` (Goods). | What are the mandatory minimum HSN digits (4-digit or 6-digit) required based on the company's annual aggregate turnover (AATO threshold > ₹5 Crores requires 6 digits; < ₹5 Crores requires 4 digits for B2B, optional for B2C)? |
+
