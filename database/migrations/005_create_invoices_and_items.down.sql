@@ -7,3 +7,4 @@ DROP TABLE IF EXISTS invoices CASCADE;
 DROP TABLE IF EXISTS invoice_sequences CASCADE;
 
 COMMIT;
+

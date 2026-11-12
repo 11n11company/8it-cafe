@@ -38,3 +38,4 @@ CREATE INDEX IF NOT EXISTS idx_products_category ON products (category_id, is_ac
 CREATE INDEX IF NOT EXISTS idx_categories_brand ON categories (brand_id, is_active);
 
 COMMIT;
+

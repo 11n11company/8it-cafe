@@ -41,3 +41,4 @@ CREATE INDEX IF NOT EXISTS idx_print_jobs_kot ON print_jobs (kot_id);
 CREATE INDEX IF NOT EXISTS idx_print_attempts_job ON print_attempts (print_job_id, attempt_number);
 
 COMMIT;
+

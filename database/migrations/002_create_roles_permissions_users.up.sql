@@ -49,3 +49,4 @@ CREATE INDEX IF NOT EXISTS idx_users_company ON users (company_id, is_active);
 CREATE INDEX IF NOT EXISTS idx_users_role ON users (role_id);
 
 COMMIT;
+

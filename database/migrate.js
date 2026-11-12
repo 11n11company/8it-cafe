@@ -175,3 +175,4 @@ switch (command) {
     console.error(`Unknown command: ${command}. Use 'up', 'down', or 'status'.`);
     process.exit(1);
 }
+

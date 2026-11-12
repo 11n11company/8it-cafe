@@ -33,3 +33,4 @@ CREATE INDEX IF NOT EXISTS idx_kots_created ON kots (company_id, created_at);
 CREATE INDEX IF NOT EXISTS idx_kot_items_kot ON kot_items (kot_id);
 
 COMMIT;
+

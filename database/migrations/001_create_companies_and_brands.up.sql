@@ -40,3 +40,4 @@ CREATE TABLE IF NOT EXISTS brands (
 CREATE INDEX IF NOT EXISTS idx_brands_company ON brands (company_id, is_active);
 
 COMMIT;
+

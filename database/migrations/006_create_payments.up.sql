@@ -20,3 +20,4 @@ CREATE INDEX IF NOT EXISTS idx_payments_invoice ON payments (invoice_id);
 CREATE INDEX IF NOT EXISTS idx_payments_company_created ON payments (company_id, created_at);
 
 COMMIT;
+

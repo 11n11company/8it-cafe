@@ -6,3 +6,4 @@ DROP TABLE IF EXISTS print_attempts CASCADE;
 DROP TABLE IF EXISTS print_jobs CASCADE;
 
 COMMIT;
+

@@ -92,3 +92,4 @@ CREATE INDEX IF NOT EXISTS idx_invoice_items_brand_report ON invoice_items (bran
 CREATE INDEX IF NOT EXISTS idx_invoice_items_kitchen ON invoice_items (invoice_id, is_kitchen_item_snapshot);
 
 COMMIT;
+

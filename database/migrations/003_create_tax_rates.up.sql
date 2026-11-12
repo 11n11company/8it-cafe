@@ -21,3 +21,4 @@ CREATE TABLE IF NOT EXISTS tax_rates (
 CREATE INDEX IF NOT EXISTS idx_tax_rates_company ON tax_rates (company_id, is_active);
 
 COMMIT;
+

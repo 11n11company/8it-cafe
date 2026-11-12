@@ -39,3 +39,4 @@ CREATE INDEX IF NOT EXISTS idx_printers_agent ON printers (print_agent_id);
 CREATE INDEX IF NOT EXISTS idx_printers_company_active ON printers (company_id, is_active);
 
 COMMIT;
+

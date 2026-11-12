@@ -38,3 +38,4 @@ CREATE INDEX IF NOT EXISTS idx_idempotency_lookup ON idempotency_keys (company_i
 CREATE INDEX IF NOT EXISTS idx_idempotency_expiry ON idempotency_keys (expires_at);
 
 COMMIT;
+

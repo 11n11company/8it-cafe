@@ -6,3 +6,4 @@ DROP TABLE IF EXISTS idempotency_keys CASCADE;
 DROP TABLE IF EXISTS audit_logs CASCADE;
 
 COMMIT;
+
