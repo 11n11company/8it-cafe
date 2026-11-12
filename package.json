@@ -1,0 +1,19 @@
+{
+  "name": "cafe-cloud-pos",
+  "version": "0.1.0",
+  "description": "Cafe Cloud POS - Multi-brand cloud POS for Cafe Company and Brownie Shop",
+  "private": true,
+  "scripts": {
+    "db:up": "node database/migrate.js up",
+    "db:down": "node database/migrate.js down",
+    "db:status": "node database/migrate.js status",
+    "db:seed": "node database/seed.js",
+    "db:verify": "node database/verify.js",
+    "docker:up": "docker compose -f deployment/docker-compose.yml up -d",
+    "docker:down": "docker compose -f deployment/docker-compose.yml down"
+  },
+  "dependencies": {
+    "dotenv": "^16.4.7",
+    "pg": "^8.13.1"
+  }
+}

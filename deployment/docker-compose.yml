@@ -1,0 +1,25 @@
+name: cafe-cloud-pos
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: cafe-cloud-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${DB_NAME:-cafe_cloud_pos}
+      POSTGRES_USER: ${DB_USER:-cafe_admin}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-cafe_secure_dev_pass_2026}
+    ports:
+      - "${DB_PORT:-5432}:5432"
+    volumes:
+      - cafe_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-cafe_admin} -d ${DB_NAME:-cafe_cloud_pos}"]
+      interval: 3s
+      timeout: 3s
+      retries: 10
+      start_period: 5s
+
+volumes:
+  cafe_postgres_data:
+    name: cafe_cloud_postgres_data
