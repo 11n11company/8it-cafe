@@ -10,11 +10,20 @@
     "db:seed": "node database/seed.js",
     "db:verify": "node database/verify.js",
     "docker:up": "docker compose -f deployment/docker-compose.yml up -d",
-    "docker:down": "docker compose -f deployment/docker-compose.yml down"
+    "docker:down": "docker compose -f deployment/docker-compose.yml down",
+    "backend:dev": "node --watch backend/src/server.js",
+    "backend:start": "node backend/src/server.js",
+    "backend:test": "node --test backend/tests/health.test.js",
+    "test": "npm run backend:test"
   },
   "dependencies": {
+    "cors": "^2.8.6",
     "dotenv": "^16.4.7",
+    "express": "^5.3.0",
+    "helmet": "^8.3.0",
     "pg": "^8.13.1"
+  },
+  "devDependencies": {
+    "supertest": "^7.3.2"
   }
 }
-
