@@ -124,3 +124,4 @@ When code implementation begins, the CI pipeline will enforce:
 2. `npm run test:unit`: High-speed unit tests (calculations & ESC/POS parsing).
 3. `npm run test:integration`: API & database integration tests with a containerized PostgreSQL instance.
 4. `npm run test:printer-simulation`: Mock hardware resilience test suite.
+

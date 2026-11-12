@@ -115,3 +115,4 @@ All security-sensitive, fiscal, or operational overrides are logged to an append
   - X-Content-Type-Options: `nosniff`
   - Referrer-Policy: `strict-origin-when-cross-origin`
 - **CORS Restriction**: Backend API restricts Cross-Origin Resource Sharing strictly to the whitelisted domain of the tablet PWA client.
+

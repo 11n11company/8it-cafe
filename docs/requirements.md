@@ -135,3 +135,4 @@ The kitchen ticket generation process must strictly adhere to the following sequ
 - **No Offline Billing Mode**: The system operates exclusively online connected to the cloud backend.
 - **No Customer-Facing Display (CFD)**: Only the single cashier tablet is used.
 - **No Microservices Architecture**: Backend must remain a clean, modular monolith.
+

@@ -170,3 +170,4 @@ function printToThermalPrinter(ip, port, escposBuffer, timeoutMs = 4000) {
   });
 }
 ```
+

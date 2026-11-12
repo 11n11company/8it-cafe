@@ -166,3 +166,4 @@ sequenceDiagram
         Note over DB,Tablet: Invoice INV-2026-0001 remains valid and completed! Cashier can click "Reprint KOT" later.
     end
 ```
+

@@ -124,3 +124,4 @@ Immediately after a cashier taps **Pay & Complete Bill** and selects tender (Cas
   - **Primary Action (Pay)**: Forest Green (#2E7D32)
   - **KOT Action**: Deep Royal Blue (#1565C0)
 - **Network State Notification**: A persistent, unobtrusive status pill in the top header indicates cloud connection health (`Online - Sync Live` vs `Connection Lost`).
+

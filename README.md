@@ -147,3 +147,4 @@ For deep dives into each subsystem, consult the specification files in the `docs
 - [Printing & KOT Workflow](docs/printing-workflow.md)
 - [Security & Access Control](docs/security-plan.md)
 - [Testing & Quality Assurance](docs/testing-plan.md)
+
