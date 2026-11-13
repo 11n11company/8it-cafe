@@ -119,6 +119,47 @@ function validateEnv(customEnv = process.env) {
     errors.push(`DB_POOL_MAX must be a number between 1 and 100. Received: "${customEnv.DB_POOL_MAX}"`);
   }
 
+  // 6. JWT and Authentication Configuration
+  const DEV_DEFAULT_JWT_SECRET = 'dev_jwt_secret_cafe_cloud_pos_super_secure_32chars';
+  let jwtSecret = customEnv.JWT_SECRET;
+  if (!jwtSecret) {
+    if (isProduction) {
+      errors.push('JWT_SECRET is required in production environment.');
+    } else {
+      jwtSecret = DEV_DEFAULT_JWT_SECRET;
+    }
+  } else {
+    jwtSecret = jwtSecret.trim();
+    if (isProduction) {
+      if (jwtSecret === DEV_DEFAULT_JWT_SECRET) {
+        errors.push('JWT_SECRET cannot use the default development secret in production. A strong, unique secret is required.');
+      }
+      if (jwtSecret.length < 32) {
+        errors.push('JWT_SECRET must be at least 32 characters in production.');
+      }
+    }
+  }
+
+  const jwtExpiresIn = customEnv.JWT_EXPIRES_IN || '8h';
+
+  const rawBcryptRounds = customEnv.BCRYPT_SALT_ROUNDS || '12';
+  const bcryptRounds = parseInt(rawBcryptRounds, 10);
+  if (isNaN(bcryptRounds) || bcryptRounds < 10 || bcryptRounds > 16) {
+    errors.push(`BCRYPT_SALT_ROUNDS must be a number between 10 and 16. Received: "${rawBcryptRounds}"`);
+  }
+
+  const rawRateLimitWindow = customEnv.LOGIN_RATE_LIMIT_WINDOW_MS || '900000'; // 15 mins
+  const rateLimitWindowMs = parseInt(rawRateLimitWindow, 10);
+  if (isNaN(rateLimitWindowMs) || rateLimitWindowMs < 1000) {
+    errors.push(`LOGIN_RATE_LIMIT_WINDOW_MS must be at least 1000 ms. Received: "${rawRateLimitWindow}"`);
+  }
+
+  const rawRateLimitMax = customEnv.LOGIN_RATE_LIMIT_MAX || '10';
+  const rateLimitMax = parseInt(rawRateLimitMax, 10);
+  if (isNaN(rateLimitMax) || rateLimitMax < 1) {
+    errors.push(`LOGIN_RATE_LIMIT_MAX must be at least 1. Received: "${rawRateLimitMax}"`);
+  }
+
   // Fail fast if any configuration errors detected
   if (errors.length > 0) {
     const message = `[FATAL] Environment configuration validation failed:\n  - ${errors.join('\n  - ')}`;
@@ -137,6 +178,15 @@ function validateEnv(customEnv = process.env) {
       max: poolMax,
       idleTimeoutMillis,
       connectionTimeoutMillis
+    },
+    jwt: {
+      secret: jwtSecret,
+      expiresIn: jwtExpiresIn
+    },
+    auth: {
+      bcryptRounds,
+      rateLimitWindowMs,
+      rateLimitMax
     }
   };
 }

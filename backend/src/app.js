@@ -10,6 +10,7 @@ const cors = require('cors');
 const crypto = require('crypto');
 const { config } = require('./config/env');
 const { createHealthRouter } = require('./routes/health.routes');
+const { createAuthRouter } = require('./routes/auth.routes');
 const notFoundHandler = require('./middleware/not-found.js');
 const errorHandler = require('./middleware/error-handler.js');
 
@@ -76,6 +77,13 @@ function createApp(options = {}) {
     dbCheck: options.dbCheck
   });
   app.use(`${config.API_PREFIX}/health`, healthRouter);
+
+  const authRouter = createAuthRouter({
+    dbPool: options.dbPool,
+    rateLimiter: options.rateLimiter,
+    isProduction: options.isProduction !== undefined ? options.isProduction : (config.NODE_ENV === 'production')
+  });
+  app.use(`${config.API_PREFIX}/auth`, authRouter);
 
   // 6. 404 handler for unknown routes
   app.use(notFoundHandler);

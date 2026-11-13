@@ -13,14 +13,17 @@
     "docker:down": "docker compose -f deployment/docker-compose.yml down",
     "backend:dev": "node --watch backend/src/server.js",
     "backend:start": "node backend/src/server.js",
-    "backend:test": "node --test backend/tests/health.test.js",
+    "backend:test": "node --test backend/tests/health.test.js backend/tests/auth.test.js",
     "test": "npm run backend:test"
   },
   "dependencies": {
+    "bcryptjs": "^3.0.3",
     "cors": "^2.8.6",
     "dotenv": "^16.4.7",
     "express": "^5.3.0",
+    "express-rate-limit": "^8.7.4",
     "helmet": "^8.3.0",
+    "jsonwebtoken": "^9.0.3",
     "pg": "^8.13.1"
   },
   "devDependencies": {

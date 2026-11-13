@@ -208,6 +208,37 @@ describe('Backend Foundation Tests', () => {
         /DB_HOST is required in production/
       );
     });
+
+    it('rejects missing or default JWT secret in production mode', () => {
+      assert.throws(
+        () => validateEnv({
+          NODE_ENV: 'production',
+          CORS_ORIGIN: 'https://pos.cafecompany.in',
+          DATABASE_URL: 'postgres://user:pass@localhost:5432/db'
+        }),
+        /JWT_SECRET is required in production environment/
+      );
+
+      assert.throws(
+        () => validateEnv({
+          NODE_ENV: 'production',
+          CORS_ORIGIN: 'https://pos.cafecompany.in',
+          DATABASE_URL: 'postgres://user:pass@localhost:5432/db',
+          JWT_SECRET: 'dev_jwt_secret_cafe_cloud_pos_super_secure_32chars'
+        }),
+        /JWT_SECRET cannot use the default development secret in production/
+      );
+
+      assert.throws(
+        () => validateEnv({
+          NODE_ENV: 'production',
+          CORS_ORIGIN: 'https://pos.cafecompany.in',
+          DATABASE_URL: 'postgres://user:pass@localhost:5432/db',
+          JWT_SECRET: 'short_secret'
+        }),
+        /JWT_SECRET must be at least 32 characters in production/
+      );
+    });
   });
 
   // 8. Database Query Safety Helper
