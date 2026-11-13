@@ -42,6 +42,7 @@ function createMockPool() {
       full_name: 'System Admin',
       email: 'admin@cafecompany.internal',
       is_active: true,
+      token_version: 1,
       company_id: TEST_COMPANY_1,
       role_id: TEST_ROLE_ADMIN
     },
@@ -52,6 +53,7 @@ function createMockPool() {
       full_name: 'Store Manager',
       email: 'manager@cafecompany.internal',
       is_active: true,
+      token_version: 1,
       company_id: TEST_COMPANY_1,
       role_id: TEST_ROLE_MANAGER
     },
@@ -62,6 +64,7 @@ function createMockPool() {
       full_name: 'Counter Cashier',
       email: 'cashier@cafecompany.internal',
       is_active: true,
+      token_version: 1,
       company_id: TEST_COMPANY_1,
       role_id: TEST_ROLE_CASHIER
     },
@@ -72,6 +75,7 @@ function createMockPool() {
       full_name: 'Other Tenant Cashier',
       email: 'cashier@othercompany.internal',
       is_active: true,
+      token_version: 1,
       company_id: TEST_COMPANY_2,
       role_id: TEST_ROLE_CASHIER
     },
@@ -82,6 +86,7 @@ function createMockPool() {
       full_name: 'Inactive Cashier',
       email: 'inactive@cafecompany.internal',
       is_active: false,
+      token_version: 1,
       company_id: TEST_COMPANY_1,
       role_id: TEST_ROLE_CASHIER
     },
@@ -92,6 +97,7 @@ function createMockPool() {
       full_name: 'Inactive Company Cashier',
       email: 'cashier@inactiveco.internal',
       is_active: true,
+      token_version: 1,
       company_id: TEST_COMPANY_INACTIVE,
       role_id: TEST_ROLE_CASHIER
     }
@@ -159,6 +165,7 @@ function createMockPool() {
             full_name: user.full_name,
             email: user.email,
             is_active: user.is_active,
+            token_version: user.token_version ?? 1,
             company_id: user.company_id,
             company_legal_name: company?.legal_name,
             company_trade_name: company?.trade_name,
@@ -188,6 +195,7 @@ function createMockPool() {
             full_name: user.full_name,
             email: user.email,
             is_active: user.is_active,
+            token_version: user.token_version ?? 1,
             company_id: user.company_id,
             company_legal_name: company?.legal_name,
             company_trade_name: company?.trade_name,

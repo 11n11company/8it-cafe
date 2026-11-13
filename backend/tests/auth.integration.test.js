@@ -22,7 +22,7 @@ describe('Phase 3.2 Real PostgreSQL Authentication Integration Test', () => {
   // Track exact fixture IDs and individual insertion states
   const fixture = {
     companyId: crypto.randomUUID(),
-    roleId: crypto.randomUUID(),
+    roleId: 'e2b8c001-0000-4000-a000-000000000003', // Canonical global CASHIER role from Migration 012
     userId: crypto.randomUUID(),
     username: `test_usr_${Date.now().toString(36)}_${crypto.randomBytes(2).toString('hex')}`,
     password: 'IntegTestSecurePass2026!',
@@ -76,21 +76,8 @@ describe('Phase 3.2 Real PostgreSQL Authentication Integration Test', () => {
     ]);
     inserted.company = true;
 
-    // 2. Create test role
-    await pool.query(`
-      INSERT INTO roles (
-        id, company_id, code, name, description, is_system
-      ) VALUES (
-        $1, $2, $3, $4, $5, FALSE
-      );
-    `, [
-      fixture.roleId,
-      fixture.companyId,
-      'CASHIER',
-      'Integration Test Cashier',
-      'Role created specifically for Phase 3.2 real PostgreSQL verification'
-    ]);
-    inserted.role = true;
+    // 2. Use canonical global CASHIER role (already seeded by Migration 012)
+    inserted.role = false;
 
     // 3. Create test user with bcrypt cost factor 12
     const passwordHash = await bcrypt.hash(fixture.password, 12);
@@ -155,7 +142,7 @@ describe('Phase 3.2 Real PostgreSQL Authentication Integration Test', () => {
 
         const residualCount =
           Number(checkComp.rows[0].count) +
-          Number(checkRole.rows[0].count) +
+          (inserted.role ? Number(checkRole.rows[0].count) : 0) +
           Number(checkUser.rows[0].count) +
           Number(checkRev.rows[0].count) +
           Number(checkAudit.rows[0].count);

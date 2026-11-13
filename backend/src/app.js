@@ -11,6 +11,10 @@ const crypto = require('crypto');
 const { config } = require('./config/env');
 const { createHealthRouter } = require('./routes/health.routes');
 const { createAuthRouter } = require('./routes/auth.routes');
+const { createCompanyRouter } = require('./routes/company.routes');
+const { createBrandRouter } = require('./routes/brand.routes');
+const { createUserRouter } = require('./routes/user.routes');
+const { createRoleRouter } = require('./routes/role.routes');
 const notFoundHandler = require('./middleware/not-found.js');
 const errorHandler = require('./middleware/error-handler.js');
 
@@ -84,6 +88,18 @@ function createApp(options = {}) {
     isProduction: options.isProduction !== undefined ? options.isProduction : (config.NODE_ENV === 'production')
   });
   app.use(`${config.API_PREFIX}/auth`, authRouter);
+
+  const companyRouter = createCompanyRouter({ dbPool: options.dbPool });
+  app.use(`${config.API_PREFIX}/company`, companyRouter);
+
+  const brandRouter = createBrandRouter({ dbPool: options.dbPool });
+  app.use(`${config.API_PREFIX}/brands`, brandRouter);
+
+  const userRouter = createUserRouter({ dbPool: options.dbPool });
+  app.use(`${config.API_PREFIX}/users`, userRouter);
+
+  const roleRouter = createRoleRouter({ dbPool: options.dbPool });
+  app.use(`${config.API_PREFIX}/roles`, roleRouter);
 
   // 6. 404 handler for unknown routes
   app.use(notFoundHandler);

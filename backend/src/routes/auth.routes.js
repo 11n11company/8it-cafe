@@ -86,10 +86,13 @@ function createAuthRouter(dependencies = {}) {
     const timestamp = new Date().toISOString();
     const requestId = req.id || null;
 
+    // Never leak tokenVersion or sensitive hashes in user response DTO
+    const { tokenVersion, ...safeUser } = req.user;
+
     return res.status(200).json({
       success: true,
       data: {
-        user: req.user
+        user: safeUser
       },
       meta: { timestamp, requestId }
     });

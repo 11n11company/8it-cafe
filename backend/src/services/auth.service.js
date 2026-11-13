@@ -43,7 +43,7 @@ async function authenticateUser(username, password, context = {}, dbPool) {
   // 1. Fetch user by username joined with parent company and assigned role
   const userResult = await query(`
     SELECT 
-      u.id, u.username, u.password_hash, u.full_name, u.email, u.is_active,
+      u.id, u.username, u.password_hash, u.full_name, u.email, u.is_active, u.token_version,
       u.company_id,
       c.legal_name AS company_legal_name, c.trade_name AS company_trade_name, c.is_active AS company_active,
       r.id AS role_id, r.code AS role_code, r.name AS role_name
@@ -114,12 +114,13 @@ async function authenticateUser(username, password, context = {}, dbPool) {
 
   const permissions = permResult.rows.map((p) => p.code);
 
-  // 4. Generate JWT with tenant and role claims
+  // 4. Generate JWT with tenant, role, and tokenVersion claims
   const tokenPayload = {
     sub: user.id,
     username: user.username,
     companyId: user.company_id,
-    role: user.role_code
+    role: user.role_code,
+    tokenVersion: user.token_version ?? 1
   };
 
   const accessToken = signAccessToken(tokenPayload);
@@ -177,7 +178,7 @@ async function authenticateUser(username, password, context = {}, dbPool) {
 async function getUserProfile(userId, dbPool) {
   const userResult = await query(`
     SELECT 
-      u.id, u.username, u.full_name, u.email, u.is_active,
+      u.id, u.username, u.full_name, u.email, u.is_active, u.token_version,
       u.company_id,
       c.legal_name AS company_legal_name, c.trade_name AS company_trade_name, c.is_active AS company_active,
       r.id AS role_id, r.code AS role_code, r.name AS role_name
@@ -206,6 +207,7 @@ async function getUserProfile(userId, dbPool) {
     username: user.username,
     fullName: user.full_name,
     email: user.email,
+    tokenVersion: user.token_version ?? 1,
     role: {
       id: user.role_id,
       code: user.role_code,

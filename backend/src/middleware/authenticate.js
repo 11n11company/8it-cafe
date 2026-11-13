@@ -51,7 +51,19 @@ function createAuthMiddleware(dependencies = {}) {
       // 1. Verify token signature and expiry
       const decoded = verifyAccessToken(token);
 
-      // 2. Check if token has been revoked in database denylist
+      // 2. Reject legacy or malformed tokens missing valid tokenVersion claim
+      if (typeof decoded.tokenVersion !== 'number' || decoded.tokenVersion < 1) {
+        return res.status(401).json({
+          success: false,
+          error: {
+            code: 'UNAUTHORIZED',
+            message: 'Invalid or outdated token format. Please log in again.'
+          },
+          meta: { timestamp, requestId }
+        });
+      }
+
+      // 3. Check if token has been revoked in database denylist
       const tokenHash = hashToken(token);
       const isRevoked = await isTokenRevoked(tokenHash, dbPool);
       if (isRevoked) {
@@ -65,10 +77,22 @@ function createAuthMiddleware(dependencies = {}) {
         });
       }
 
-      // 3. Hydrate live user and company context from database
+      // 4. Hydrate live user and company context from database
       const userProfile = await getUserProfile(decoded.sub, dbPool);
 
-      // 4. Attach authenticated user and tenant isolation context to request
+      // 5. Enforce token_version equality to immediately invalidate revoked sessions
+      if (decoded.tokenVersion !== userProfile.tokenVersion) {
+        return res.status(401).json({
+          success: false,
+          error: {
+            code: 'UNAUTHORIZED',
+            message: 'Session has been invalidated. Please log in again.'
+          },
+          meta: { timestamp, requestId }
+        });
+      }
+
+      // 6. Attach authenticated user and tenant isolation context to request
       req.user = userProfile;
       req.tenant = {
         companyId: userProfile.company.id,
