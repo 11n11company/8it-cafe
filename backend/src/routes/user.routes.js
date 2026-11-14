@@ -11,7 +11,8 @@ const {
   updateUser,
   updateUserRole,
   updateUserStatus,
-  resetUserPassword
+  resetUserPassword,
+  resetUserPin
 } = require('../services/user.service');
 const { createAuthMiddleware } = require('../middleware/authenticate');
 const { requirePermission, enforceTenantIsolation } = require('../middleware/authorize');
@@ -281,6 +282,47 @@ function createUserRouter(dependencies = {}) {
             message: 'Password reset successfully',
             user: updated
           },
+          meta: { timestamp, requestId }
+        });
+      } catch (err) {
+        next(err);
+      }
+    }
+  );
+
+  /**
+   * POST /api/v1/users/:id/reset-pin
+   * Reset or clear user PIN and clear lockout state.
+   */
+  router.post(
+    '/:id/reset-pin',
+    authenticate,
+    requirePermission('user:reset_pin'),
+    enforceTenantIsolation('companyId'),
+    async (req, res, next) => {
+      const timestamp = new Date().toISOString();
+      const requestId = req.id || null;
+
+      try {
+        const companyId = req.tenant.companyId;
+        const targetUserId = req.params.id;
+        const { newPin } = req.body || {};
+        const requestingUserId = req.user.id;
+        const clientIp = req.ip || req.socket.remoteAddress;
+        const userAgent = req.headers['user-agent'] || 'unknown';
+
+        const result = await resetUserPin(
+          companyId,
+          targetUserId,
+          newPin,
+          requestingUserId,
+          { ipAddress: clientIp, userAgent },
+          dbPool
+        );
+
+        return res.status(200).json({
+          success: true,
+          data: result,
           meta: { timestamp, requestId }
         });
       } catch (err) {

@@ -13,7 +13,7 @@
     "docker:down": "docker compose -f deployment/docker-compose.yml down",
     "backend:dev": "node --watch backend/src/server.js",
     "backend:start": "node backend/src/server.js",
-    "backend:test": "node --test backend/tests/health.test.js backend/tests/auth.test.js backend/tests/auth.integration.test.js backend/tests/phase3_3.integration.test.js",
+    "backend:test": "node --test backend/tests/health.test.js backend/tests/auth.test.js backend/tests/auth.integration.test.js backend/tests/phase3_3.integration.test.js backend/tests/phase3_4.integration.test.js",
     "test": "npm run backend:test"
   },
   "dependencies": {

@@ -1,26 +1,35 @@
 /**
  * Cafe Cloud POS - Authentication & Tenant Session Routes
  * Implements login, profile introspection (/me), token revocation (/logout),
+ * cashier PIN management (/pin/setup, /pin/change), quick cashier switching (/switch-cashier),
  * and test demonstration RBAC/tenant isolation routes.
  */
 
 const express = require('express');
-const { authenticateUser, revokeToken } = require('../services/auth.service');
+const {
+  authenticateUser,
+  revokeToken,
+  setupUserPin,
+  changeUserPin,
+  switchCashier
+} = require('../services/auth.service');
 const { createAuthMiddleware } = require('../middleware/authenticate');
 const { authorizeRoles, enforceTenantIsolation } = require('../middleware/authorize');
-const { loginRateLimiter } = require('../middleware/rate-limiter');
+const { loginRateLimiter, pinRateLimiter } = require('../middleware/rate-limiter');
 
 /**
  * Creates authentication router with optional dependency injection for testing.
  * @param {Object} [dependencies]
  * @param {import('pg').Pool} [dependencies.dbPool]
  * @param {import('express').RequestHandler} [dependencies.rateLimiter]
+ * @param {import('express').RequestHandler} [dependencies.pinLimiter]
  * @returns {express.Router}
  */
 function createAuthRouter(dependencies = {}) {
   const router = express.Router();
   const dbPool = dependencies.dbPool;
   const rateLimiter = dependencies.rateLimiter || loginRateLimiter;
+  const switchLimiter = dependencies.pinLimiter || pinRateLimiter;
   const isProduction = (dependencies.isProduction !== undefined)
     ? Boolean(dependencies.isProduction)
     : (process.env.NODE_ENV === 'production');
@@ -64,7 +73,7 @@ function createAuthRouter(dependencies = {}) {
         meta: { timestamp, requestId }
       });
     } catch (err) {
-      if (err.statusCode === 401 || err.statusCode === 400) {
+      if (err.statusCode >= 400 && err.statusCode < 500) {
         return res.status(err.statusCode).json({
           success: false,
           error: {
@@ -126,6 +135,128 @@ function createAuthRouter(dependencies = {}) {
         meta: { timestamp, requestId }
       });
     } catch (err) {
+      next(err);
+    }
+  });
+
+  /**
+   * POST /api/v1/auth/pin/setup
+   * Self-service initial PIN setup for authenticated active user.
+   */
+  router.post('/pin/setup', authenticate, switchLimiter, async (req, res, next) => {
+    const timestamp = new Date().toISOString();
+    const requestId = req.id || null;
+
+    try {
+      const { pin } = req.body || {};
+      const clientIp = req.ip || req.socket.remoteAddress;
+      const userAgent = req.headers['user-agent'] || 'unknown';
+
+      const result = await setupUserPin({
+        userId: req.user.id,
+        companyId: req.tenant.companyId,
+        pin,
+        clientContext: { ipAddress: clientIp, userAgent }
+      }, dbPool);
+
+      return res.status(200).json({
+        success: true,
+        data: result,
+        meta: { timestamp, requestId }
+      });
+    } catch (err) {
+      if (err.statusCode >= 400 && err.statusCode < 500) {
+        return res.status(err.statusCode).json({
+          success: false,
+          error: {
+            code: err.code || 'BAD_REQUEST',
+            message: err.message
+          },
+          meta: { timestamp, requestId }
+        });
+      }
+      next(err);
+    }
+  });
+
+  /**
+   * POST /api/v1/auth/pin/change
+   * Self-service PIN change after verifying current PIN.
+   */
+  router.post('/pin/change', authenticate, switchLimiter, async (req, res, next) => {
+    const timestamp = new Date().toISOString();
+    const requestId = req.id || null;
+
+    try {
+      const { currentPin, newPin } = req.body || {};
+      const clientIp = req.ip || req.socket.remoteAddress;
+      const userAgent = req.headers['user-agent'] || 'unknown';
+
+      const result = await changeUserPin({
+        userId: req.user.id,
+        companyId: req.tenant.companyId,
+        currentPin,
+        newPin,
+        clientContext: { ipAddress: clientIp, userAgent }
+      }, dbPool);
+
+      return res.status(200).json({
+        success: true,
+        data: result,
+        meta: { timestamp, requestId }
+      });
+    } catch (err) {
+      if (err.statusCode >= 400 && err.statusCode < 500) {
+        return res.status(err.statusCode).json({
+          success: false,
+          error: {
+            code: err.code || 'BAD_REQUEST',
+            message: err.message
+          },
+          meta: { timestamp, requestId }
+        });
+      }
+      next(err);
+    }
+  });
+
+  /**
+   * POST /api/v1/auth/switch-cashier
+   * Quick Cashier switching using target cashier's 4-digit PIN.
+   */
+  router.post('/switch-cashier', authenticate, switchLimiter, async (req, res, next) => {
+    const timestamp = new Date().toISOString();
+    const requestId = req.id || null;
+
+    try {
+      const { targetUserId, pin } = req.body || {};
+      const clientIp = req.ip || req.socket.remoteAddress;
+      const userAgent = req.headers['user-agent'] || 'unknown';
+
+      const result = await switchCashier({
+        initiatingUser: req.user,
+        initiatingToken: req.token,
+        targetUserId,
+        pin,
+        clientContext: { ipAddress: clientIp, userAgent }
+      }, dbPool);
+
+      return res.status(200).json({
+        success: true,
+        data: result,
+        meta: { timestamp, requestId }
+      });
+    } catch (err) {
+      if (err.statusCode >= 400 && err.statusCode < 500) {
+        return res.status(err.statusCode).json({
+          success: false,
+          error: {
+            code: err.code || 'BAD_REQUEST',
+            message: err.message
+          },
+          meta: { timestamp, requestId }
+        });
+      }
       next(err);
     }
   });
@@ -222,4 +353,3 @@ module.exports = {
   createAuthRouter,
   defaultRouter: createAuthRouter()
 };
-

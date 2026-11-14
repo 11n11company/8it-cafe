@@ -6,6 +6,7 @@
 
 const { pool } = require('../config/database');
 const { hashPassword } = require('../utils/password');
+const { hashPin, assertValidPinFormat } = require('../utils/pin');
 const { recordAuditEventTx } = require('./audit.service');
 
 // Hook for test synchronization barriers
@@ -655,6 +656,100 @@ async function resetUserPassword(companyId, targetUserId, newPassword, requestin
   }
 }
 
+/**
+ * Resets or clears a user's 4-digit PIN and resets any active lockout state.
+ * Strictly available to administrators holding user:reset_pin.
+ *
+ * @param {string} companyId
+ * @param {string} targetUserId
+ * @param {string|null} [newPin] Optional 4-digit PIN; if omitted or null, clears existing PIN
+ * @param {string} requestingUserId
+ * @param {Object} [clientContext]
+ * @param {import('pg').Pool} [dbPool]
+ * @returns {Promise<Object>}
+ */
+async function resetUserPin(companyId, targetUserId, newPin, requestingUserId, clientContext = {}, dbPool = pool) {
+  const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+  if (!targetUserId || typeof targetUserId !== 'string' || !UUID_REGEX.test(targetUserId)) {
+    const err = new Error('targetUserId must be a valid UUID');
+    err.statusCode = 400;
+    err.code = 'VALIDATION_FAILED';
+    throw err;
+  }
+
+  let hashedPin = null;
+  if (newPin !== undefined && newPin !== null && newPin !== '') {
+    assertValidPinFormat(newPin, 'newPin');
+    hashedPin = await hashPin(newPin);
+  }
+
+  const { ipAddress = null, userAgent = null } = clientContext;
+  const client = await dbPool.connect();
+
+  try {
+    await client.query('BEGIN;');
+
+    const lockRes = await client.query(`
+      SELECT u.id, u.company_id, u.role_id, u.username, u.full_name, u.phone, u.email,
+             u.is_active, u.token_version,
+             r.code AS role_code, r.name AS role_name
+      FROM users u
+      JOIN roles r ON r.id = u.role_id
+      WHERE u.id = $1 AND u.company_id = $2
+      FOR UPDATE;
+    `, [targetUserId, companyId]);
+
+    if (lockRes.rowCount === 0) {
+      const err = new Error('User not found');
+      err.statusCode = 404;
+      err.code = 'USER_NOT_FOUND';
+      throw err;
+    }
+
+    const targetUser = lockRes.rows[0];
+
+    const updateRes = await client.query(`
+      UPDATE users
+      SET pin_hash = $1,
+          pin_failed_attempts = 0,
+          pin_locked_until = NULL,
+          updated_at = CURRENT_TIMESTAMP
+      WHERE id = $2 AND company_id = $3
+      RETURNING id, company_id, role_id, username, full_name, phone, email, is_active, created_at, updated_at;
+    `, [hashedPin, targetUserId, companyId]);
+
+    const updated = updateRes.rows[0];
+    updated.role_code = targetUser.role_code;
+    updated.role_name = targetUser.role_name;
+
+    await recordAuditEventTx(client, {
+      companyId,
+      userId: requestingUserId,
+      action: 'USER_PIN_RESET',
+      entityType: 'USER',
+      entityId: targetUserId,
+      newValues: {
+        targetUserId,
+        pinAction: hashedPin ? 'PIN_RESET' : 'PIN_CLEARED',
+        lockoutCleared: true
+      },
+      ipAddress,
+      userAgent
+    });
+
+    await client.query('COMMIT;');
+    return {
+      message: hashedPin ? 'User PIN reset successfully' : 'User PIN cleared and lockout reset successfully',
+      user: mapUserRowToDto(updated)
+    };
+  } catch (err) {
+    await client.query('ROLLBACK;');
+    throw err;
+  } finally {
+    client.release();
+  }
+}
+
 module.exports = {
   listUsers,
   getUserById,
@@ -663,6 +758,7 @@ module.exports = {
   updateUserRole,
   updateUserStatus,
   resetUserPassword,
+  resetUserPin,
   mapUserRowToDto,
   setTestBeforeMutationHook,
   clearTestBeforeMutationHook

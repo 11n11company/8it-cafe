@@ -703,7 +703,8 @@ describe('Phase 3.3 — Company, Brand, User & Role Management Integration Tests
       const adminRole = res.body.data.find(r => r.code === 'ADMIN');
       assert.ok(adminRole);
       assert.strictEqual(adminRole.isSystem, true);
-      assert.strictEqual(adminRole.permissions.length, 24, 'ADMIN must have all 24 permissions after Migration 013');
+      const pre014Perms = adminRole.permissions.filter(p => p !== 'user:reset_pin');
+      assert.strictEqual(pre014Perms.length, 24, 'ADMIN must have all 24 permissions after Migration 013');
       assert.ok(adminRole.permissions.includes('user:manage_roles'));
       assert.ok(adminRole.permissions.includes('user:reset_password'));
       assert.ok(adminRole.permissions.includes('role:read'));
@@ -914,17 +915,15 @@ describe('Phase 3.3 — Company, Brand, User & Role Management Integration Tests
           WHERE code IN ('user:manage_roles', 'user:reset_password');
         `);
 
-        // Assert exactly 22 permissions remain
-        const countRes = await testClient.query('SELECT count(*)::int as count FROM permissions;');
+        // Assert exactly 22 permissions remain from Migration 012
+        const countRes = await testClient.query("SELECT count(*)::int as count FROM permissions WHERE code != 'user:reset_pin';");
         assert.strictEqual(countRes.rows[0].count, 22);
 
         // Assert role:read and user:update are still intact
         const legacyPerms = await testClient.query("SELECT code FROM permissions WHERE code IN ('role:read', 'user:update') ORDER BY code;");
         assert.strictEqual(legacyPerms.rows.length, 2);
-
-        // Always ROLLBACK in dev database to leave Migration 013 active
-        await testClient.query('ROLLBACK;');
       } finally {
+        await testClient.query('ROLLBACK;').catch(() => {});
         testClient.release();
       }
     });
