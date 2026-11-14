@@ -76,7 +76,6 @@ Authenticates a cashier or manager using credentials.
   }
 }
 ```
-
 ---
 
 ### 3.2 Catalog Management (`/categories` & `/products`)
@@ -133,7 +132,6 @@ Pure server-side calculation for live cart previews. No database mutations occur
   }
 }
 ```
-
 #### `POST /billing/invoices`
 Atomically completes the customer bill, commits the invoice, and settles payment.
 - **Request**:
@@ -307,6 +305,162 @@ Returns total legal entity figures for GST filing.
     "totalCgst": 8887.50,
     "totalSgst": 8887.50,
     "netRevenue": 373275.00
+  }
+}
+```
+
+---
+
+### 3.7 Tax & GST Management (`/tax-rates`)
+
+#### `GET /tax-rates`
+Retrieves tax rates scoped to the caller's company.
+- **Authorization**: `tax:read` (ADMIN, STORE_MANAGER, CASHIER).
+- **Cashier Isolation**: CASHIER accounts automatically receive only active rates. ADMIN/STORE_MANAGER can pass `?includeInactive=true`.
+- **Response (200 OK)**:
+```json
+{
+  "success": true,
+  "data": [
+    {
+      "id": "550e8400-e29b-41d4-a716-446655440001",
+      "companyId": "c1f76d91-320e-473c-a968-356c39f018e2",
+      "name": "GST 5%",
+      "ratePercentage": "5.00",
+      "cgstRate": "2.50",
+      "sgstRate": "2.50",
+      "igstRate": "5.00",
+      "cessRate": "0.00",
+      "isActive": true,
+      "description": "Standard 5% restaurant GST",
+      "createdAt": "2026-11-14T10:00:00.000Z",
+      "updatedAt": "2026-11-14T10:00:00.000Z"
+    }
+  ]
+}
+```
+
+#### `GET /tax-rates/:id`
+Retrieves a single tax rate by ID scoped to tenant.
+- **Authorization**: `tax:read` (ADMIN, STORE_MANAGER, CASHIER).
+- CASHIER receives `404 TAX_RATE_NOT_FOUND` if the tax rate is inactive.
+
+#### `POST /tax-rates`
+Creates a new tenant-scoped tax rate.
+- **Authorization**: `tax:create` (ADMIN, STORE_MANAGER). CASHIER receives `403 FORBIDDEN`.
+- **Request Body**:
+```json
+{
+  "name": "GST 18%",
+  "rate_percentage": "18.00",
+  "cess_rate": "0.00",
+  "description": "Standard 18% retail goods"
+}
+```
+- **Validation**:
+  - `rate_percentage` and `cess_rate` must be decimal strings (never numeric numbers).
+  - Parity check: `rate_percentage` must be even hundredths (e.g. `18.00`, not `18.01`).
+  - Auto-derives: `cgst_rate = 9.00`, `sgst_rate = 9.00`, `igst_rate = 18.00`.
+- **Response (201 Created)**:
+```json
+{
+  "success": true,
+  "data": {
+    "id": "550e8400-e29b-41d4-a716-446655440002",
+    "name": "GST 18%",
+    "ratePercentage": "18.00",
+    "cgstRate": "9.00",
+    "sgstRate": "9.00",
+    "igstRate": "18.00",
+    "cessRate": "0.00",
+    "isActive": true
+  }
+}
+```
+
+#### `PATCH /tax-rates/:id`
+Updates descriptive fields of an existing tax rate.
+- **Authorization**: `tax:update` (ADMIN, STORE_MANAGER).
+- **Immutability Contract**: `rate_percentage`, `cgst_rate`, `sgst_rate`, `igst_rate`, and `cess_rate` are immutable. Attempting to alter rates returns `400 Bad Request: TAX_RATE_IMMUTABLE`.
+- **Request Body**:
+```json
+{
+  "name": "GST 18% - Confectionery",
+  "description": "Updated description"
+}
+```
+
+#### `PATCH /tax-rates/:id/status`
+Soft-toggles the active state of a tax rate.
+- **Authorization**: `tax:update` (ADMIN, STORE_MANAGER).
+- **Request Body**:
+```json
+{
+  "isActive": false
+}
+```
+
+#### `POST /tax-rates/calculate-preview`
+Server-authoritative GST calculation preview for shopping basket.
+- **Authorization**: `tax:read` (ADMIN, STORE_MANAGER, CASHIER).
+- **Request Body**:
+```json
+{
+  "supplyClassification": "DINE_IN",
+  "items": [
+    {
+      "productId": "440e8400-e29b-41d4-a716-446655440010",
+      "quantity": 2
+    }
+  ]
+}
+```
+- **Security & Authority**:
+  - Client cannot submit prices, tax rates, or inclusive flags.
+  - Backend looks up product price, `is_tax_inclusive`, and linked active `tax_rates` row.
+  - Rejects inactive products (`PRODUCT_INACTIVE`) or inactive tax rates (`TAX_RATE_INACTIVE`).
+- **Response (200 OK)**:
+```json
+{
+  "success": true,
+  "data": {
+    "supplyClassification": "DINE_IN",
+    "taxType": "INTRA_STATE",
+    "companyStateCode": "29",
+    "placeOfSupplyStateCode": "29",
+    "items": [
+      {
+        "productId": "440e8400-e29b-41d4-a716-446655440010",
+        "productName": "Espresso Blend",
+        "sku": "PRD-00000001",
+        "quantity": 2,
+        "unitPrice": "150.00",
+        "isTaxInclusive": true,
+        "taxRatePercentage": "5.00",
+        "cgstRate": "2.50",
+        "sgstRate": "2.50",
+        "igstRate": "0.00",
+        "cessRate": "0.00",
+        "grossAmount": "300.00",
+        "taxableValue": "285.71",
+        "cgstAmount": "7.14",
+        "sgstAmount": "7.14",
+        "igstAmount": "0.00",
+        "cessAmount": "0.00",
+        "roundingResidual": "0.01",
+        "lineTotal": "300.00"
+      }
+    ],
+    "summary": {
+      "subtotalGross": "300.00",
+      "totalTaxableAmount": "285.71",
+      "totalCgstAmount": "7.14",
+      "totalSgstAmount": "7.14",
+      "totalIgstAmount": "0.00",
+      "totalCessAmount": "0.00",
+      "roundingAdjustment": "0.01",
+      "grandTotal": "300.00"
+    }
   }
 }
 ```

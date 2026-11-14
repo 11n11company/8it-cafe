@@ -21,7 +21,7 @@ Both brands share a unified billing counter, one tablet POS terminal, and a sing
 - **Product Ownership**:
   - Each product is strictly scoped to one company (`company_id`), one brand (`brand_id`), one category (`category_id`), and one tax rate (`tax_rate_id`).
   - The assigned `category_id` must belong to the exact same `brand_id` (`400 Bad Request: CATEGORY_BRAND_MISMATCH`).
-  - The assigned `tax_rate_id` must belong to the company or system (`400 Bad Request: INVALID_TAX_RATE`).
+  - The assigned `tax_rate_id` must belong to the caller's company or canonical system tax rates (`400 Bad Request: INVALID_TAX_RATE`). Phase 3.6 enforces that tax rates are tenant-isolated and statutory rate percentages are immutable once created.
   - A product's brand is immutable once created (`400 Bad Request: BRAND_CHANGE_NOT_PERMITTED`).
 
 ---
@@ -79,7 +79,7 @@ Migration 015 assigns the existing system permissions `product:create` and `prod
 2. The invoice is committed atomically to PostgreSQL. **No KOT is generated automatically.**
 3. The cashier manually clicks **"Print KOT"** when the order is ready for the kitchen.
 4. When the KOT ticket is generated, only line items whose product has `is_kitchen_item = true` are included on the kitchen slip. Retail non-kitchen items are excluded from the kitchen print job.
-5. Historical invoice items store immutable snapshots (`product_name`, `unit_price`, `gst_rate`, etc.). Future product price adjustments, name changes, or deactivations never alter finalized invoices.
+5. Historical invoice items store immutable snapshots (`product_name`, `unit_price`, `tax_rate_percentage`, `cess_rate`, `cess_amount`, `rounding_residual`, `line_total`, etc.). Future product price adjustments, name changes, or tax rate deactivations never alter finalized invoices. Reference `docs/tax-gst-specification.md` for exact GST Rule 35 extraction and rounding definitions.
 6. Foreign key `invoice_items.product_id REFERENCES products(id) ON DELETE RESTRICT` protects catalog records from accidental hard deletion once invoiced.
 
 ---
