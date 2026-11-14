@@ -15,6 +15,8 @@ const { createCompanyRouter } = require('./routes/company.routes');
 const { createBrandRouter } = require('./routes/brand.routes');
 const { createUserRouter } = require('./routes/user.routes');
 const { createRoleRouter } = require('./routes/role.routes');
+const { createCategoryRouter } = require('./routes/category.routes');
+const { createProductRouter } = require('./routes/product.routes');
 const notFoundHandler = require('./middleware/not-found.js');
 const errorHandler = require('./middleware/error-handler.js');
 
@@ -100,6 +102,12 @@ function createApp(options = {}) {
 
   const roleRouter = createRoleRouter({ dbPool: options.dbPool });
   app.use(`${config.API_PREFIX}/roles`, roleRouter);
+
+  const categoryRouter = createCategoryRouter({ dbPool: options.dbPool });
+  app.use(`${config.API_PREFIX}/categories`, categoryRouter);
+
+  const productRouter = createProductRouter({ dbPool: options.dbPool });
+  app.use(`${config.API_PREFIX}/products`, productRouter);
 
   // 6. 404 handler for unknown routes
   app.use(notFoundHandler);

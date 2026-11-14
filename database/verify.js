@@ -122,7 +122,7 @@ async function runTests() {
     // 3. System Role
     await client.query(`
       INSERT INTO roles (id, company_id, code, name, description, is_system) VALUES
-        ($1, $2, 'TEST_CASHIER', 'Test Cashier Role', 'Role for verification suite', TRUE);
+        ($1, $2, 'TEST_CASHIER', 'Test Cashier Role', 'Role for verification suite', FALSE);
     `, [fixtureRoleId, fixtureCompanyId]);
 
     // 4. Cashier User

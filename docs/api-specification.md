@@ -79,43 +79,25 @@ Authenticates a cashier or manager using credentials.
 
 ---
 
-### 3.2 Catalog & Menu (`/catalog`)
+### 3.2 Catalog Management (`/categories` & `/products`)
 
-#### `GET /catalog/products`
-Retrieves products across both brands for the POS tablet grid.
-- **Query Params**: `?brandId=UUID` (optional filter)
-- **Response (200 OK)**:
-```json
-{
-  "success": true,
-  "data": [
-    {
-      "id": "p101-cafe-americano",
-      "brandId": "b1-cafe-company",
-      "brandCode": "CC",
-      "brandName": "Cafe Company",
-      "name": "Iced Americano",
-      "category": "Cold Beverages",
-      "price": 180.00,
-      "gstRate": 5.00,
-      "hsnCode": "996331",
-      "isActive": true
-    },
-    {
-      "id": "p201-brownie-fudge",
-      "brandId": "b2-brownie-shop",
-      "brandCode": "BS",
-      "brandName": "Brownie Shop",
-      "name": "Classic Fudge Brownie",
-      "category": "Brownies",
-      "price": 150.00,
-      "gstRate": 5.00,
-      "hsnCode": "996331",
-      "isActive": true
-    }
-  ]
-}
-```
+*(Detailed architectural and RBAC specification available at [catalog-specification.md](catalog-specification.md))*
+
+#### 3.2.1 Categories (`/categories`)
+
+- `POST /categories`: Create new category for a brand (`product:create` permission).
+- `GET /categories`: List categories for tenant (cashiers receive active only; optional `?brand_id=UUID`).
+- `GET /categories/:id`: Retrieve single category.
+- `PATCH /categories/:id`: Update category name, description, or display order (`product:update` permission).
+- `PATCH /categories/:id/status`: Toggle category active status (`product:update` permission; blocked with 409 if active products exist).
+
+#### 3.2.2 Products (`/products`)
+
+- `POST /products`: Create product with server-generated sequence SKU `PRD-XXXXXXXX` (`product:create` permission). Client-supplied SKUs are rejected with 400.
+- `GET /products`: List products with pagination and filters (`?page=1&limit=50&brand_id=UUID&category_id=UUID&search=query`). Cashiers receive active products only.
+- `GET /products/:id`: Retrieve single product with brand, category, and tax rate metadata.
+- `PATCH /products/:id`: Update product (`product:update` permission; SKU and brand are immutable).
+- `PATCH /products/:id/status`: Toggle product active status (`product:update` permission).
 
 ---
 

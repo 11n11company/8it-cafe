@@ -149,10 +149,30 @@ function enforceTenantIsolation(paramName = 'companyId') {
   };
 }
 
+/**
+ * Checks whether an authenticated user has catalog management authority
+ * (ADMIN, STORE_MANAGER, or possessing the product:update permission).
+ * @param {Object} user req.user object populated by authenticate middleware
+ * @returns {boolean}
+ */
+function canManageCatalog(user) {
+  if (!user) return false;
+  const userPermissions = Array.isArray(user.permissions) ? user.permissions : [];
+  if (userPermissions.includes('product:update')) {
+    return true;
+  }
+  const rawRole = (user.role && typeof user.role === 'object')
+    ? (user.role.code || user.role.name)
+    : user.role;
+  const normalizedRole = normalizeRole(rawRole || '');
+  return normalizedRole === 'ADMIN' || normalizedRole === 'STORE_MANAGER';
+}
+
 module.exports = {
   authorizeRoles,
   requirePermission,
   enforceTenantIsolation,
-  normalizeRole
+  normalizeRole,
+  canManageCatalog
 };
 
