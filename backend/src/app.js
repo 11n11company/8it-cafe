@@ -23,6 +23,7 @@ const { createWebhookRouter } = require('./routes/webhook.routes');
 const { createInventoryRouter } = require('./routes/inventory.routes');
 const { createReportsRouter } = require('./routes/reports.routes');
 const path = require('path');
+const fs = require('fs');
 const notFoundHandler = require('./middleware/not-found.js');
 const errorHandler = require('./middleware/error-handler.js');
 
@@ -132,8 +133,46 @@ function createApp(options = {}) {
   const reportsRouter = createReportsRouter({ dbPool: options.dbPool });
   app.use(`${config.API_PREFIX}/reports`, reportsRouter);
 
-  // Serve static dashboard UI
+  // 1. Static dashboard UI (standalone operational dashboard)
+  const dashboardPublicDir = path.join(__dirname, '../../frontend/public/dashboard');
+  const dashboardDir = path.join(__dirname, '../../frontend/dashboard');
+  const dashboardDistDir = path.join(__dirname, '../../frontend/dist/dashboard');
+
+  app.get(['/dashboard', '/dashboard/'], (req, res, next) => {
+    const candidates = [
+      path.join(dashboardPublicDir, 'index.html'),
+      path.join(dashboardDir, 'index.html'),
+      path.join(dashboardDistDir, 'index.html'),
+      path.join(__dirname, '../../frontend/index.html')
+    ];
+    for (const candidate of candidates) {
+      if (fs.existsSync(candidate)) {
+        return res.sendFile(candidate);
+      }
+    }
+    next();
+  });
+
+  if (fs.existsSync(dashboardPublicDir)) {
+    app.use('/dashboard', express.static(dashboardPublicDir));
+  } else if (fs.existsSync(dashboardDir)) {
+    app.use('/dashboard', express.static(dashboardDir));
+  }
+  app.use('/dashboard', express.static(dashboardDistDir));
   app.use('/dashboard', express.static(path.join(__dirname, '../../frontend')));
+
+  // 2. React POS & Admin Application (built distribution)
+  const distDir = path.join(__dirname, '../../frontend/dist');
+  app.use(express.static(distDir));
+
+  // SPA fallback for frontend client routes (non-API)
+  app.get(['/', '/pos', '/admin', '/invoices', '/reports', '/login', '/checkout'], (req, res, next) => {
+    const indexPath = path.join(distDir, 'index.html');
+    if (fs.existsSync(indexPath)) {
+      return res.sendFile(indexPath);
+    }
+    next();
+  });
 
   // 6. 404 handler for unknown routes
   app.use(notFoundHandler);
