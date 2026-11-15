@@ -18,6 +18,8 @@ const { createRoleRouter } = require('./routes/role.routes');
 const { createCategoryRouter } = require('./routes/category.routes');
 const { createProductRouter } = require('./routes/product.routes');
 const { createTaxRateRouter } = require('./routes/tax-rate.routes');
+const { createBillingRouter } = require('./routes/billing.routes');
+const { createWebhookRouter } = require('./routes/webhook.routes');
 const notFoundHandler = require('./middleware/not-found.js');
 const errorHandler = require('./middleware/error-handler.js');
 
@@ -75,6 +77,11 @@ function createApp(options = {}) {
     next();
   });
 
+  // 3.5. Mount Payment Gateway Webhook Router BEFORE express.json()
+  // This guarantees that raw request bytes are preserved for HMAC signature verification.
+  const webhookRouter = createWebhookRouter({ dbPool: options.dbPool });
+  app.use(`${config.API_PREFIX}/webhooks`, webhookRouter);
+
   // 4. Request payload parsing with safe size limits (100kb limit prevents DoS payload attacks)
   app.use(express.json({ limit: '100kb' }));
   app.use(express.urlencoded({ extended: false, limit: '100kb' }));
@@ -112,6 +119,9 @@ function createApp(options = {}) {
 
   const taxRateRouter = createTaxRateRouter({ dbPool: options.dbPool });
   app.use(`${config.API_PREFIX}/tax-rates`, taxRateRouter);
+
+  const billingRouter = createBillingRouter({ dbPool: options.dbPool });
+  app.use(`${config.API_PREFIX}/billing`, billingRouter);
 
   // 6. 404 handler for unknown routes
   app.use(notFoundHandler);

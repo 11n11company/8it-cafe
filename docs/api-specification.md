@@ -465,3 +465,334 @@ Server-authoritative GST calculation preview for shopping basket.
 }
 ```
 
+---
+
+## 8. Phase 3.7 Billing & Invoice Management API
+
+### 8.1 Cart Calculation Preview
+
+#### `POST /api/v1/billing/calculate`
+Calculates shopping cart item breakdown and GST line totals without saving an invoice.
+- **Authorization**: `order:read` or `order:create` (ADMIN, STORE_MANAGER, CASHIER).
+- **Request Body**:
+```json
+{
+  "supplyClassification": "DINE_IN",
+  "items": [
+    {
+      "productId": "440e8400-e29b-41d4-a716-446655440010",
+      "quantity": 2,
+      "discountAmount": "0.00",
+      "notes": "Extra hot"
+    }
+  ]
+}
+```
+- **Response (200 OK)**:
+```json
+{
+  "success": true,
+  "data": {
+    "isInterstate": false,
+    "placeOfSupplyStateCode": "29",
+    "items": [
+      {
+        "productId": "440e8400-e29b-41d4-a716-446655440010",
+        "brandName": "Cafe Company",
+        "brandCode": "CC",
+        "itemName": "Americano",
+        "sku": "CC-AME-001",
+        "hsnSacCode": "0901",
+        "isKitchenItem": true,
+        "quantity": 2,
+        "unitPrice": "150.00",
+        "grossAmount": "300.00",
+        "discountAmount": "0.00",
+        "taxableValue": "285.71",
+        "taxRatePercentage": "5.00",
+        "cgstRate": "2.50",
+        "cgstAmount": "7.14",
+        "sgstRate": "2.50",
+        "sgstAmount": "7.14",
+        "igstRate": "0.00",
+        "igstAmount": "0.00",
+        "cessRate": "0.00",
+        "cessAmount": "0.00",
+        "roundingResidual": "0.01",
+        "lineTotal": "300.00",
+        "notes": "Extra hot"
+      }
+    ],
+    "summary": {
+      "subtotalGross": "300.00",
+      "totalDiscountAmount": "0.00",
+      "totalTaxableAmount": "285.71",
+      "totalCgstAmount": "7.14",
+      "totalSgstAmount": "7.14",
+      "totalIgstAmount": "0.00",
+      "totalCessAmount": "0.00",
+      "roundingAdjustment": "0.01",
+      "grandTotal": "300.00"
+    }
+  },
+  "meta": { "timestamp": "2026-11-15T20:30:00.000Z", "requestId": "req_12345" }
+}
+```
+
+---
+
+### 8.2 Invoice Creation & Draft Editing
+
+#### `POST /api/v1/billing/invoices`
+Creates a new draft invoice (`payment_status = 'PENDING'`) with historical company, brand, product, HSN, price, and tax snapshots. If payment `tenders` are included, atomically settles the invoice immediately.
+- **Authorization**: `order:create` (ADMIN, STORE_MANAGER, CASHIER).
+- **Request Headers**:
+  - `X-Idempotency-Key` (Optional for draft; mandatory if tenders provided).
+- **Request Body**:
+```json
+{
+  "counterCode": "COUNTER-01",
+  "notes": "Table 4 Dine-in",
+  "items": [
+    { "productId": "440e8400-e29b-41d4-a716-446655440010", "quantity": 1 }
+  ]
+}
+```
+- **Response (201 Created)**:
+```json
+{
+  "success": true,
+  "data": {
+    "id": "a77e7535-31ce-48eb-82c9-9457dbc530b9",
+    "invoice_number": "INV-202627-000001",
+    "financial_year": "2026-27",
+    "payment_status": "PENDING",
+    "grand_total": "150.00",
+    "created_at": "2026-11-15T20:30:00.000Z"
+  },
+  "meta": { "timestamp": "2026-11-15T20:30:00.000Z", "requestId": "req_12345" }
+}
+```
+
+#### `GET /api/v1/billing/invoices`
+Lists tenant invoices with pagination and filters.
+- **Authorization**: `order:read` (ADMIN, STORE_MANAGER, CASHIER).
+- **Query Parameters**:
+  - `page`: default 1
+  - `limit`: default 20
+  - `paymentStatus`: `PENDING` | `PAID` | `VOIDED` | `REFUNDED`
+  - `financialYear`: e.g. `2026-27`
+  - `fromDate`, `toDate`: ISO date filters
+- **Response (200 OK)**:
+```json
+{
+  "success": true,
+  "data": [
+    {
+      "id": "a77e7535-31ce-48eb-82c9-9457dbc530b9",
+      "invoice_number": "INV-202627-000001",
+      "financial_year": "2026-27",
+      "payment_status": "PAID",
+      "grand_total": "150.00",
+      "created_at": "2026-11-15T20:30:00.000Z",
+      "settled_at": "2026-11-15T20:31:00.000Z"
+    }
+  ],
+  "pagination": { "page": 1, "limit": 20, "total": 1, "totalPages": 1 },
+  "meta": { "timestamp": "2026-11-15T20:30:00.000Z", "requestId": "req_12345" }
+}
+```
+
+#### `GET /api/v1/billing/invoices/:id`
+Retrieves single invoice detail including historical snapshot items, totals, and payment tenders.
+- **Authorization**: `order:read` (ADMIN, STORE_MANAGER, CASHIER).
+- **Response (200 OK)**:
+```json
+{
+  "success": true,
+  "data": {
+    "id": "a77e7535-31ce-48eb-82c9-9457dbc530b9",
+    "invoice_number": "INV-202627-000001",
+    "financial_year": "2026-27",
+    "payment_status": "PAID",
+    "grand_total": "150.00",
+    "items": [ ... ],
+    "payments": [ ... ]
+  },
+  "meta": { "timestamp": "2026-11-15T20:30:00.000Z", "requestId": "req_12345" }
+}
+```
+
+#### `PATCH /api/v1/billing/invoices/:id/items`
+Modifies draft basket items while invoice status is `PENDING`. Blocked by database trigger if invoice is `PAID`, `VOIDED`, or `REFUNDED`.
+- **Authorization**: `order:update` (ADMIN, STORE_MANAGER, CASHIER).
+- **Request Body**:
+```json
+{
+  "items": [
+    { "productId": "440e8400-e29b-41d4-a716-446655440010", "quantity": 3 }
+  ]
+}
+```
+- **Response (200 OK)**: Returns updated invoice summary and recomputed totals.
+
+---
+
+### 8.3 POS Checkout & Atomic Settlement
+
+#### `POST /api/v1/billing/invoices/:id/checkout`
+Atomically settles a draft invoice with tender validation, advisory locks, row locks, idempotency check, and deferred database trigger reconciliation.
+- **Authorization**: `order:create` (ADMIN, STORE_MANAGER, CASHIER).
+- **Request Headers**:
+  - `X-Idempotency-Key` (Mandatory).
+- **Request Body**:
+```json
+{
+  "tenders": [
+    { "payment_method": "CASH", "amount": "100.00", "tendered_amount": "200.00" },
+    { "payment_method": "UPI", "amount": "50.00", "transaction_reference": "UPI98765432" }
+  ]
+}
+```
+- **Tender Rules**:
+  - Sum of `amount` must exactly match `grand_total`. Underpayment and overpayment return `400 TOTAL_TENDER_MISMATCH`.
+  - For `CASH`: `tendered_amount >= amount`. `change_returned` is computed and stored.
+  - Non-cash methods (`CARD`, `UPI`, `WALLET`, `NET_BANKING`): `tendered_amount` defaults to `amount`, `change_returned = 0.00`.
+- **Response (200 OK)**:
+```json
+{
+  "success": true,
+  "data": {
+    "success": true,
+    "invoice_id": "a77e7535-31ce-48eb-82c9-9457dbc530b9",
+    "invoice_number": "INV-202627-000001",
+    "payment_status": "PAID",
+    "grand_total": "150.00",
+    "payments": [
+      {
+        "id": "e83e6023-5e92-411a-b615-5cb3530e3710",
+        "payment_method": "CASH",
+        "amount": "100.00",
+        "tendered_amount": "200.00",
+        "change_returned": "100.00",
+        "status": "SUCCESS"
+      },
+      {
+        "id": "4d16d68b-59ce-4943-85f0-58c067e76550",
+        "payment_method": "UPI",
+        "amount": "50.00",
+        "status": "SUCCESS"
+      }
+    ]
+  },
+  "meta": { "timestamp": "2026-11-15T20:30:00.000Z", "requestId": "req_12345" }
+}
+```
+
+---
+
+### 8.4 Invoice Cancellation & Refunds
+
+#### `POST /api/v1/billing/invoices/:id/void`
+Voids a draft `PENDING` invoice with audit trail and mandatory reason. Cashiers are forbidden (`403 FORBIDDEN`). PAID invoices cannot be voided (must use refund).
+- **Authorization**: `order:cancel` (ADMIN, STORE_MANAGER).
+- **Request Body**:
+```json
+{
+  "reason": "Customer changed mind before payment"
+}
+```
+- **Response (200 OK)**:
+```json
+{
+  "success": true,
+  "data": {
+    "id": "a77e7535-31ce-48eb-82c9-9457dbc530b9",
+    "payment_status": "VOIDED",
+    "void_reason": "Customer changed mind before payment"
+  },
+  "meta": { "timestamp": "2026-11-15T20:30:00.000Z", "requestId": "req_12345" }
+}
+```
+
+#### `POST /api/v1/billing/invoices/:id/refund`
+Processes full or partial refunds for `PAID` invoices. Allocates refund amount against successful payments up to unrefunded balance. Creates immutable `refund_vouchers` and `refund_allocations`. Marks invoice as `REFUNDED` when unrefunded balance becomes 0. Cashiers are forbidden (`403 FORBIDDEN`).
+- **Authorization**: `order:cancel` (ADMIN, STORE_MANAGER).
+- **Request Body**:
+```json
+{
+  "amount": "150.00",
+  "reason": "Quality dissatisfaction / returned product"
+}
+```
+- **Response (200 OK)**:
+```json
+{
+  "success": true,
+  "data": {
+    "refund_voucher_id": "848270df-a9b8-4775-9c5c-7d9a8c081e6a",
+    "invoice_id": "a77e7535-31ce-48eb-82c9-9457dbc530b9",
+    "amount": "150.00",
+    "status": "COMPLETED",
+    "reason": "Quality dissatisfaction / returned product",
+    "invoice_payment_status": "REFUNDED",
+    "allocations": [
+      {
+        "id": "bb3fa1de-8fe8-4443-8551-789a957ca169",
+        "payment_id": "e83e6023-5e92-411a-b615-5cb3530e3710",
+        "amount": "100.00"
+      },
+      {
+        "id": "cd4fa1de-8fe8-4443-8551-789a957ca170",
+        "payment_id": "4d16d68b-59ce-4943-85f0-58c067e76550",
+        "amount": "50.00"
+      }
+    ]
+  },
+  "meta": { "timestamp": "2026-11-15T20:30:00.000Z", "requestId": "req_12345" }
+}
+```
+
+---
+
+### 8.5 Payment Gateway Webhooks & Durable Outbox
+
+#### `POST /api/v1/webhooks/gateway`
+Secure asynchronous payment webhook ingestion with HMAC-SHA256 signature verification, secret rotation grace period, duplicate replay deduplication (`200 IDEMPOTENT_ACK`), payload conflict detection (`409 Conflict`), and orphan capture persistence.
+- **Headers**:
+  - `X-Gateway-Signature` (HMAC-SHA256 hex signature over raw request body).
+- **Webhook Events**:
+  - `payment.captured`
+  - `payment.failed`
+  - `refund.processed`
+- **Orphan Handling**:
+  - Webhook referencing unknown payment is stored durably in `gateway_orphan_captures` with status `PENDING_REFUND`.
+- **Response (200 OK)**:
+```json
+{
+  "status": "ACKNOWLEDGED",
+  "eventId": "evt_gateway_12345"
+}
+```
+
+#### `GET /api/v1/billing/orphan-captures`
+Audits unresolved or auto-refunded orphan captures.
+- **Authorization**: `order:read` (ADMIN, STORE_MANAGER).
+- **Response (200 OK)**:
+```json
+{
+  "success": true,
+  "data": [
+    {
+      "id": "8d3e911a-4712-4eb5-8292-8051724cb11a",
+      "gateway_payment_id": "pay_gw_9999",
+      "amount": "450.00",
+      "status": "PENDING_REFUND",
+      "reason": "UNKNOWN_PAYMENT_REFERENCE",
+      "created_at": "2026-11-15T20:30:00.000Z"
+    }
+  ],
+  "meta": { "timestamp": "2026-11-15T20:30:00.000Z", "requestId": "req_12345" }
+}
+```
+
