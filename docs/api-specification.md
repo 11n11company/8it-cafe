@@ -796,3 +796,120 @@ Audits unresolved or auto-refunded orphan captures.
 }
 ```
 
+---
+
+## 9. Inventory & Stock Management (`/api/v1/inventory`)
+
+Provides end-to-end multi-brand inventory management including raw materials, ingredients, packaged retail goods, multi-tier units of measurement (UOM), Bills of Materials / Recipes, stock adjustments, receipts, counts, and real-time inventory valuation reports.
+
+### 9.1 Units of Measurement & Categories
+
+#### `GET /api/v1/inventory/uom`
+List all units of measurement for tenant company.
+- **Authorization**: `inventory:read` (ADMIN, STORE_MANAGER).
+- **Response (200 OK)**:
+```json
+{
+  "success": true,
+  "data": [
+    { "id": "uuid", "name": "Gram", "code": "g", "conversion_factor": "1.000000" },
+    { "id": "uuid", "name": "Kilogram", "code": "kg", "base_unit_id": "uuid", "conversion_factor": "1000.000000" }
+  ],
+  "meta": { "timestamp": "2026-11-15T21:00:00.000Z", "requestId": "req_12345" }
+}
+```
+
+#### `POST /api/v1/inventory/uom`
+Create custom unit of measurement.
+- **Authorization**: `inventory:adjust` (ADMIN, STORE_MANAGER).
+
+#### `GET /api/v1/inventory/categories` & `POST /api/v1/inventory/categories`
+Manage tenant inventory categories (e.g. Baking Ingredients, Dairy, Packaging).
+
+### 9.2 Inventory Items
+
+#### `GET /api/v1/inventory/items`
+List inventory items with stock balance summary, filtered by type, category, or active status.
+- **Authorization**: `inventory:read`.
+
+#### `POST /api/v1/inventory/items`
+Create new inventory item (Raw Material, Ingredient, Semi-Finished, Packaged Good, Packaging).
+- **Authorization**: `inventory:adjust`.
+- **Request**:
+```json
+{
+  "sku": "RAW-FLOUR-001",
+  "name": "All-Purpose Wheat Flour",
+  "categoryId": "uuid",
+  "uomId": "uuid",
+  "itemType": "RAW_MATERIAL",
+  "currentCost": "45.0000",
+  "reorderLevel": "10.0000",
+  "minimumStock": "5.0000",
+  "initialStock": "50.0000"
+}
+```
+
+#### `PATCH /api/v1/inventory/items/:id/active`
+Soft-deactivate or reactivate an inventory item. Preserves historical ledger references.
+
+### 9.3 Product Mappings & Recipes (BOM)
+
+#### `POST /api/v1/inventory/mappings`
+Map 1:1 sellable POS catalog product to packaged inventory item.
+
+#### `POST /api/v1/inventory/recipes`
+Create or update recipe / bill of materials for prepared kitchen products with auto-versioning.
+- **Authorization**: `inventory:adjust`.
+- **Request**:
+```json
+{
+  "productId": "uuid",
+  "yieldQuantity": "1.0000",
+  "yieldUnit": "piece",
+  "instructions": "Mix ingredients and bake",
+  "components": [
+    { "inventoryItemId": "uuid", "quantity": "0.0500", "uomId": "uuid" },
+    { "inventoryItemId": "uuid", "quantity": "0.0300", "uomId": "uuid" }
+  ]
+}
+```
+
+#### `GET /api/v1/inventory/recipes/:productId`
+Retrieve active recipe with component stock availability and estimated total production cost.
+
+### 9.4 Stock Operations & Ledger
+
+#### `POST /api/v1/inventory/opening-stock`
+Set initial opening stock balance with unit cost.
+
+#### `POST /api/v1/inventory/receipts`
+Receive incoming supplier purchase delivery; atomically recalculates weighted Moving Average Cost.
+- **Formula**: `New Avg Cost = (Old Value + Received Value) / (Old Qty + Received Qty)`
+
+#### `POST /api/v1/inventory/adjustments`
+Record manual stock adjustment (Wastage, Expiry, Damage, Variance, Production, Internal Consumption).
+
+#### `POST /api/v1/inventory/transfers`
+Transfer stock between locations (e.g. Main Store to Kitchen).
+
+#### `POST /api/v1/inventory/counts` & `POST /api/v1/inventory/counts/:sessionId/reconcile`
+Perform physical cycle count and auto-reconcile discrepancies against perpetual ledger.
+
+### 9.5 Real-Time Reports
+
+#### `GET /api/v1/inventory/reports/current-stock`
+Full itemized inventory levels with average cost and valuation.
+
+#### `GET /api/v1/inventory/reports/low-stock`
+Items at or below reorder level.
+
+#### `GET /api/v1/inventory/reports/valuation`
+Total inventory valuation by item and aggregate company total using Moving Average Cost.
+
+#### `GET /api/v1/inventory/reports/brand-wise`
+Brand-segregated consumption and stock breakdown for multi-brand cloud kitchen operations.
+
+#### `GET /api/v1/inventory/reports/consolidated`
+Executive overview aggregating valuation, low/out-of-stock counts, and brand allocations.
+

@@ -9,6 +9,7 @@ const { pool } = require('../config/database');
 const { recordAuditEventTx } = require('./audit.service');
 const { calculateLineTax, resolvePlaceOfSupply } = require('./gst-calculation.service');
 const { stringToPaise, paiseToString, roundDiv } = require('../utils/tax-decimal');
+const { consumeStockForInvoiceTx } = require('./inventory.service');
 
 const ALLOWED_PAYMENT_METHODS = new Set(['CASH', 'UPI', 'CARD', 'OTHER']);
 
@@ -655,6 +656,9 @@ async function checkoutInvoiceTx(client, { companyId, userId, invoiceId, idempot
      WHERE id = $1 AND company_id = $2`,
     [invoiceId, companyId]
   );
+
+  // Atomically consume inventory for settled invoice items (packaged mapping or recipe BOM)
+  await consumeStockForInvoiceTx(client, { companyId, invoiceId, userId });
 
   // Audit event
   await recordAuditEventTx(client, {

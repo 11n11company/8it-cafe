@@ -20,6 +20,7 @@ const { createProductRouter } = require('./routes/product.routes');
 const { createTaxRateRouter } = require('./routes/tax-rate.routes');
 const { createBillingRouter } = require('./routes/billing.routes');
 const { createWebhookRouter } = require('./routes/webhook.routes');
+const { createInventoryRouter } = require('./routes/inventory.routes');
 const notFoundHandler = require('./middleware/not-found.js');
 const errorHandler = require('./middleware/error-handler.js');
 
@@ -122,6 +123,9 @@ function createApp(options = {}) {
 
   const billingRouter = createBillingRouter({ dbPool: options.dbPool });
   app.use(`${config.API_PREFIX}/billing`, billingRouter);
+
+  const inventoryRouter = createInventoryRouter({ dbPool: options.dbPool });
+  app.use(`${config.API_PREFIX}/inventory`, inventoryRouter);
 
   // 6. 404 handler for unknown routes
   app.use(notFoundHandler);
