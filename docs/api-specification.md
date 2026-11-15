@@ -913,3 +913,65 @@ Brand-segregated consumption and stock breakdown for multi-brand cloud kitchen o
 #### `GET /api/v1/inventory/reports/consolidated`
 Executive overview aggregating valuation, low/out-of-stock counts, and brand allocations.
 
+---
+
+## 10. Dashboard & Business Reports (`/api/v1/reports`)
+
+Provides multi-tenant, brand-segregated and consolidated operational reporting across daily/weekly/monthly/annual sales, multi-brand allocations, operational GST summaries, payment breakdowns, cashier performance, moving average inventory valuations, and wastage losses.
+
+### 10.1 Access Control & Filtering Standards
+
+- **Permissions**: `report:view` (ADMIN, STORE_MANAGER). Cashiers and unauthenticated requests are rejected with `403 FORBIDDEN` or `401 UNAUTHORIZED`.
+- **Date Presets**: `today`, `yesterday`, `this_week`, `last_week`, `this_month`, `last_month`, `this_financial_year`, or `custom` (`startDate=YYYY-MM-DD&endDate=YYYY-MM-DD`).
+- **Timezone**: Indian Standard Time (`Asia/Kolkata` / UTC+05:30) with inclusive start and exclusive end timestamp boundaries.
+- **Brand Allocation**: A mixed-brand invoice allocates each invoice line to its respective brand. The sum of brand line totals exactly reconciles with the company consolidated total.
+- **Exclusion of Voids**: Invoices with `payment_status = 'VOIDED'` are excluded from completed sales metrics.
+- **Refund Separation**: Refunded invoices report original sales and completed refunds separately to prevent double counting.
+
+### 10.2 Endpoints
+
+#### `GET /api/v1/reports/dashboard`
+Returns comprehensive management dashboard metrics including Today's KPIs, comparison chips (vs yesterday, vs same day last week, MTD), 24-hour hourly sales trend, brand performance bars, top-selling products, and recent invoices.
+
+#### `GET /api/v1/reports/sales/daily`
+Daily aggregated sales breakdown (gross sales, discounts, taxable value, taxes, net sales, invoice count, and average invoice value).
+
+#### `GET /api/v1/reports/sales/weekly`
+Weekly aggregated sales trend.
+
+#### `GET /api/v1/reports/sales/monthly`
+Monthly aggregated sales trend.
+
+#### `GET /api/v1/reports/sales/financial-year`
+Financial year (April 1 to March 31) sales summary and month-by-month progress.
+
+#### `GET /api/v1/reports/sales/brand-wise`
+Brand sales performance comparison (Cafe Company vs Brownie Shop vs others) detailing invoice counts, items sold, gross sales, taxes, net sales, and percentage share.
+
+#### `GET /api/v1/reports/sales/product-wise`
+Itemized sales based on historical invoice snapshots (`sku_snapshot`, `item_name_snapshot`, `hsn_sac_code_snapshot`) with pagination (`page`, `limit`).
+
+#### `GET /api/v1/reports/sales/category-wise`
+Sales aggregated by POS catalog categories.
+
+#### `GET /api/v1/reports/sales/hourly`
+Peak hours velocity curve across 00:00 to 23:00 hours with invoice counts and ticket averages.
+
+#### `GET /api/v1/reports/cashier-wise`
+Sales and invoice volume broken down by staff member.
+
+#### `GET /api/v1/reports/tax-summary`
+Operational GST summary broken down by statutory tax rate percentage slabs (0%, 5%, 12%, 18%, 28%) and Place of Supply state codes.
+
+#### `GET /api/v1/reports/payments`
+Payment collection summary by method (`CASH`, `UPI`, `CARD`, `OTHER`), total collected, tendered amounts, and returned change.
+
+#### `GET /api/v1/reports/refunds`
+Itemized completed refund vouchers with refund reasons and user audit details.
+
+#### `GET /api/v1/reports/inventory`
+Inventory valuation summary based on perpetual Moving Average Cost, with low-stock and out-of-stock item indicators.
+
+#### `GET /api/v1/reports/wastage`
+Financial loss and itemized quantity analysis from stock adjustments marked as `WASTAGE`, `EXPIRY`, or `DAMAGE`.
+

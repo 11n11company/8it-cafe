@@ -21,6 +21,8 @@ const { createTaxRateRouter } = require('./routes/tax-rate.routes');
 const { createBillingRouter } = require('./routes/billing.routes');
 const { createWebhookRouter } = require('./routes/webhook.routes');
 const { createInventoryRouter } = require('./routes/inventory.routes');
+const { createReportsRouter } = require('./routes/reports.routes');
+const path = require('path');
 const notFoundHandler = require('./middleware/not-found.js');
 const errorHandler = require('./middleware/error-handler.js');
 
@@ -126,6 +128,12 @@ function createApp(options = {}) {
 
   const inventoryRouter = createInventoryRouter({ dbPool: options.dbPool });
   app.use(`${config.API_PREFIX}/inventory`, inventoryRouter);
+
+  const reportsRouter = createReportsRouter({ dbPool: options.dbPool });
+  app.use(`${config.API_PREFIX}/reports`, reportsRouter);
+
+  // Serve static dashboard UI
+  app.use('/dashboard', express.static(path.join(__dirname, '../../frontend')));
 
   // 6. 404 handler for unknown routes
   app.use(notFoundHandler);
