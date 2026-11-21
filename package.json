@@ -4,6 +4,8 @@
   "description": "Cafe Cloud POS - Multi-brand cloud POS for Cafe Company and Brownie Shop",
   "private": true,
   "scripts": {
+    "build": "vite build",
+    "start": "node backend/src/server.js",
     "db:up": "node database/migrate.js up",
     "db:down": "node database/migrate.js down",
     "db:status": "node database/migrate.js status",
@@ -13,11 +15,11 @@
     "docker:down": "docker compose -f deployment/docker-compose.yml down",
     "backend:dev": "node --watch backend/src/server.js",
     "backend:start": "node backend/src/server.js",
-    "backend:test": "node --test --test-concurrency=1 backend/tests/health.test.js backend/tests/auth.test.js backend/tests/auth.integration.test.js backend/tests/phase3_3.integration.test.js backend/tests/phase3_4.integration.test.js backend/tests/phase3_5.integration.test.js backend/tests/tax-decimal.unit.test.js backend/tests/gst-calculation.unit.test.js backend/tests/phase3_6.integration.test.js backend/tests/phase3_7.integration.test.js backend/tests/inventory.integration.test.js backend/tests/reports.integration.test.js",
+    "backend:test": "node --test --test-concurrency=1 backend/tests/database-config.unit.test.js backend/tests/health.test.js backend/tests/auth.test.js backend/tests/auth.integration.test.js backend/tests/phase3_3.integration.test.js backend/tests/phase3_4.integration.test.js backend/tests/phase3_5.integration.test.js backend/tests/tax-decimal.unit.test.js backend/tests/gst-calculation.unit.test.js backend/tests/phase3_6.integration.test.js backend/tests/phase3_7.integration.test.js backend/tests/inventory.integration.test.js backend/tests/reports.integration.test.js backend/tests/table.integration.test.js backend/tests/parcel-kot.integration.test.js backend/tests/payment-sync.integration.test.js backend/tests/print-agent.integration.test.js backend/tests/print-agent-security.integration.test.js backend/tests/print-reliability-and-deduplication.integration.test.js backend/tests/checkout-outbox-and-kot-concurrency.integration.test.js backend/tests/printer-operations-and-kot-controls.integration.test.js backend/tests/incremental-kot.integration.test.js backend/tests/admin-device-registration.integration.test.js backend/tests/advanced-payment-management.integration.test.js backend/tests/security-audit-and-recovery.integration.test.js backend/tests/item-code.integration.test.js backend/tests/change-payment-mode.integration.test.js",
     "frontend:dev": "vite",
     "frontend:build": "vite build",
     "frontend:preview": "vite preview",
-    "frontend:test": "node --test frontend/tests/frontend.unit.test.js",
+    "frontend:test": "node --test --test-concurrency=1 frontend/tests/frontend.unit.test.js",
     "test": "npm run backend:test && npm run frontend:test"
   },
   "dependencies": {
@@ -28,6 +30,7 @@
     "express-rate-limit": "^8.7.4",
     "helmet": "^8.3.0",
     "jsonwebtoken": "^9.0.3",
+    "lucide-react": "0.460.0",
     "pg": "^8.13.1",
     "react": "^19.3.1",
     "react-dom": "^19.3.1"

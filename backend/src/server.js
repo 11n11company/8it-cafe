@@ -9,9 +9,11 @@ const { closePool } = require('./config/database');
 const logger = require('./utils/logger');
 
 const PORT = config.PORT;
+const HOST = process.env.HOST || '0.0.0.0';
 
-const server = app.listen(PORT, () => {
+const server = app.listen(PORT, HOST, () => {
   logger.info(`Cafe Cloud POS API server started successfully`, {
+    host: HOST,
     port: PORT,
     environment: config.NODE_ENV,
     apiPrefix: config.API_PREFIX,

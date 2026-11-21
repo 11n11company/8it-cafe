@@ -9,8 +9,7 @@ const assert = require('node:assert/strict');
 const request = require('supertest');
 const bcrypt = require('bcryptjs');
 const crypto = require('crypto');
-const { Pool } = require('pg');
-
+const { createPool } = require('../src/config/database');
 const { createApp } = require('../src/app');
 const { config } = require('../src/config/env');
 const { hashToken } = require('../src/utils/jwt');
@@ -50,7 +49,7 @@ describe('Phase 3.2 Real PostgreSQL Authentication Integration Test', () => {
       );
     }
 
-    pool = new Pool(config.db);
+    pool = createPool();
     app = createApp({ dbPool: pool });
 
     // 1. Create isolated test company
@@ -150,8 +149,9 @@ describe('Phase 3.2 Real PostgreSQL Authentication Integration Test', () => {
         assert.strictEqual(residualCount, 0, `Residual test fixture records detected after cleanup: ${residualCount}`);
       } finally {
         verifyClient.release();
-        await pool.end();
       }
+
+      await pool.end();
     }
   });
 

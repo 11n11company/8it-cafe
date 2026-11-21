@@ -14,13 +14,19 @@ function mapCategoryRowToDto(row) {
   return {
     id: row.id,
     companyId: row.company_id,
+    company_id: row.company_id,
     brandId: row.brand_id,
+    brand_id: row.brand_id,
     brandName: row.brand_name || undefined,
+    brand_name: row.brand_name || undefined,
     brandCode: row.brand_code || undefined,
+    brand_code: row.brand_code || undefined,
     name: row.name,
     description: row.description || null,
     displayOrder: row.display_order,
+    display_order: row.display_order,
     isActive: row.is_active,
+    is_active: row.is_active,
     createdAt: row.created_at,
     updatedAt: row.updated_at
   };
@@ -114,7 +120,12 @@ async function getCategoryById(companyId, categoryId, dbPool = pool) {
  * @returns {Promise<Object>}
  */
 async function createCategory(companyId, categoryData = {}, requestingUserId, clientContext = {}, dbPool = pool) {
-  const { name, brandId, description = null, displayOrder = 0 } = categoryData;
+  const brandId = categoryData.brandId || categoryData.brand_id;
+  const name = categoryData.name;
+  const description = categoryData.description !== undefined ? categoryData.description : null;
+  const displayOrder = categoryData.displayOrder !== undefined
+    ? categoryData.displayOrder
+    : (categoryData.display_order !== undefined ? categoryData.display_order : 0);
   const { ipAddress = null, userAgent = null } = clientContext;
 
   if (!name || typeof name !== 'string' || !name.trim()) {
@@ -228,7 +239,10 @@ async function updateCategory(companyId, categoryId, updateData = {}, requesting
     throw err;
   }
 
-  const { name, description, displayOrder, brandId } = updateData;
+  const name = updateData.name;
+  const description = updateData.description;
+  const displayOrder = updateData.displayOrder !== undefined ? updateData.displayOrder : updateData.display_order;
+  const brandId = updateData.brandId || updateData.brand_id;
   const { ipAddress = null, userAgent = null } = clientContext;
 
   const client = await dbPool.connect();
@@ -440,11 +454,96 @@ async function updateCategoryStatus(companyId, categoryId, isActive, requestingU
   }
 }
 
+/**
+ * Deletes category with dependency guards and transactional audit logging.
+ * Rejects deletion if products still reference this category.
+ * @param {string} companyId Authenticated tenant company UUID
+ * @param {string} categoryId Target category UUID
+ * @param {string} requestingUserId User triggering delete
+ * @param {Object} [auditMetadata]
+ * @param {import('pg').Pool} [dbPool]
+ * @returns {Promise<Object>}
+ */
+async function deleteCategory(companyId, categoryId, requestingUserId, auditMetadata = {}, dbPool = pool) {
+  if (!categoryId || !UUID_REGEX.test(categoryId)) {
+    const err = new Error('categoryId must be a valid UUID');
+    err.statusCode = 400;
+    err.code = 'VALIDATION_FAILED';
+    throw err;
+  }
+
+  const { ipAddress = null, userAgent = null } = auditMetadata;
+  const client = await dbPool.connect();
+
+  try {
+    await client.query('BEGIN;');
+
+    const lockRes = await client.query(`
+      SELECT c.id, c.name, c.is_active, b.name AS brand_name
+      FROM categories c
+      JOIN brands b ON c.brand_id = b.id
+      WHERE c.id = $1 AND c.company_id = $2
+      FOR UPDATE;
+    `, [categoryId, companyId]);
+
+    if (lockRes.rowCount === 0) {
+      const err = new Error('Category not found');
+      err.statusCode = 404;
+      err.code = 'CATEGORY_NOT_FOUND';
+      throw err;
+    }
+
+    const current = lockRes.rows[0];
+
+    // Dependency check: count products referencing this category
+    const prodCountRes = await client.query(`
+      SELECT COUNT(*)::int AS count
+      FROM products
+      WHERE category_id = $1 AND company_id = $2;
+    `, [categoryId, companyId]);
+
+    const prodCount = prodCountRes.rows[0]?.count || 0;
+    if (prodCount > 0) {
+      const err = new Error(`Cannot delete category "${current.name}". It contains ${prodCount} product(s). Please reassign or delete those products first.`);
+      err.statusCode = 409;
+      err.code = 'CATEGORY_HAS_PRODUCTS';
+      throw err;
+    }
+
+    // Delete category row (printer_categories cascades automatically)
+    await client.query(`
+      DELETE FROM categories
+      WHERE id = $1 AND company_id = $2;
+    `, [categoryId, companyId]);
+
+    await recordAuditEventTx(client, {
+      companyId,
+      userId: requestingUserId,
+      action: 'CATEGORY_DELETE',
+      entityType: 'CATEGORY',
+      entityId: categoryId,
+      oldValues: { name: current.name, brandName: current.brand_name, isActive: current.is_active },
+      newValues: null,
+      ipAddress,
+      userAgent
+    });
+
+    await client.query('COMMIT;');
+    return { id: categoryId, name: current.name, deleted: true };
+  } catch (err) {
+    await client.query('ROLLBACK;');
+    throw err;
+  } finally {
+    client.release();
+  }
+}
+
 module.exports = {
   listCategories,
   getCategoryById,
   createCategory,
   updateCategory,
   updateCategoryStatus,
+  deleteCategory,
   mapCategoryRowToDto
 };

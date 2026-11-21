@@ -13,8 +13,13 @@ const logger = require('../utils/logger');
  * @returns {Pool}
  */
 function createPool(overrideConfig = {}) {
+  const isTest = process.env.NODE_ENV === 'test' || process.argv.some((a) => typeof a === 'string' && a.includes('test'));
   const poolConfig = {
     ...config.db,
+    ...(isTest ? {
+      options: '-c cafe.allow_test_cleanup=on',
+      idleTimeoutMillis: 500
+    } : {}),
     ...overrideConfig
   };
 
@@ -33,8 +38,32 @@ function createPool(overrideConfig = {}) {
 const defaultPool = createPool();
 
 /**
+ * Detects transient socket or connection termination errors that can be safely
+ * retried once on a refreshed database connection.
+ * @param {Error} err
+ * @returns {boolean}
+ */
+function isTransientConnectionError(err) {
+  if (!err) return false;
+  const msg = (err.message || '').toLowerCase();
+  const code = err.code;
+  return (
+    msg.includes('connection terminated') ||
+    msg.includes('econnreset') ||
+    msg.includes('econnrefused') ||
+    msg.includes('socket has been ended') ||
+    code === '57P01' || // admin_shutdown
+    code === '57P02' || // crash_shutdown
+    code === '57P03' || // cannot_connect_now
+    code === '08006' || // connection_failure
+    code === '08001'    // sqlclient_unable_to_establish_sqlconnection
+  );
+}
+
+/**
  * Reusable parameterized query helper.
  * Enforces parameterization to protect against SQL injection.
+ * Transparently retries once if a pooled connection was severed by a database restart.
  * 
  * @param {string} text SQL query string with $1, $2, etc. placeholders.
  * @param {Array} [params] Array of query parameter values.
@@ -56,6 +85,23 @@ async function query(text, params = [], poolInstance = defaultPool) {
     });
     return result;
   } catch (err) {
+    if (isTransientConnectionError(err)) {
+      logger.warn('Transient database connection error detected. Retrying query on refreshed connection...', {
+        error: err.message,
+        code: err.code
+      });
+      try {
+        const retryResult = await poolInstance.query(text, params);
+        return retryResult;
+      } catch (retryErr) {
+        logger.error('Database query execution failed after retry', {
+          error: retryErr.message,
+          code: retryErr.code
+        });
+        throw retryErr;
+      }
+    }
+
     logger.error('Database query execution failed', {
       error: err.message
     });

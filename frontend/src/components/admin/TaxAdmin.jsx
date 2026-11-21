@@ -24,7 +24,7 @@ export function TaxAdmin() {
   const loadTaxRates = async () => {
     setLoading(true);
     try {
-      const res = await api.taxRates.list();
+      const res = await api.taxRates.list({ includeInactive: true });
       setTaxRates(res?.data || []);
     } catch (err) {
       setError(err.message || 'Failed to load tax rates');
@@ -106,11 +106,11 @@ export function TaxAdmin() {
   };
 
   const handleToggleStatus = async (tr) => {
-    const nextStatus = !tr.is_active;
-    if (!window.confirm(`${nextStatus ? 'Activate' : 'Deactivate'} tax rate "${tr.name}"?`)) return;
+    const currentActive = tr.isActive !== undefined ? Boolean(tr.isActive) : Boolean(tr.is_active);
+    const nextStatus = !currentActive;
     try {
       await api.taxRates.toggleStatus(tr.id, nextStatus);
-      loadTaxRates();
+      await loadTaxRates();
     } catch (err) {
       alert(err.message || 'Failed to toggle tax rate status');
     }
@@ -134,10 +134,10 @@ export function TaxAdmin() {
       >
         <span style={{ fontSize: '1.4rem', lineHeight: 1 }}>🏛️</span>
         <div>
-          <strong style={{ color: '#f59e0b', fontSize: '0.92rem' }}>
+          <strong style={{ color: 'var(--color-warning)', fontSize: '0.92rem' }}>
             Statutory Compliance Advisory: GST Master Slabs
           </strong>
-          <p style={{ color: '#cbd5e1', fontSize: '0.85rem', marginTop: '4px', lineHeight: 1.4 }}>
+          <p style={{ color: 'var(--color-text-muted)', fontSize: '0.85rem', marginTop: '4px', lineHeight: 1.4 }}>
             In accordance with Indian GST regulations, intra-state sales automatically bifurcate into equal CGST and SGST splits, while inter-state transactions apply IGST. Always verify new rates with your registered tax consultant or CA before applying them to commercial billing.
           </p>
         </div>
@@ -146,7 +146,7 @@ export function TaxAdmin() {
       {/* Toolbar */}
       <div className="admin-toolbar">
         <div>
-          <h3 style={{ fontSize: '1.1rem', color: '#f8fafc' }}>Configured Tax Slabs</h3>
+          <h3 style={{ fontSize: '1.1rem', color: 'var(--color-heading)' }}>Configured Tax Slabs</h3>
           <p className="text-xs text-muted">Authoritative tax rules applied to products during POS billing</p>
         </div>
         <Button variant="primary" size="sm" onClick={handleOpenCreate}>
@@ -171,28 +171,28 @@ export function TaxAdmin() {
           </thead>
           <tbody>
             {loading ? (
-              <tr><td colSpan="8" style={{ textAlign: 'center', padding: '24px', color: '#94a3b8' }}>Loading tax slabs...</td></tr>
+              <tr><td colSpan="8" style={{ textAlign: 'center', padding: '24px', color: 'var(--color-text-muted)' }}>Loading tax slabs...</td></tr>
             ) : taxRates.map((tr) => (
               <tr key={tr.id}>
                 <td className="font-bold">
                   {tr.name}
                   {tr.description && <div className="text-xs text-muted">{tr.description}</div>}
                 </td>
-                <td className="text-right mono font-bold" style={{ color: '#3b82f6', fontSize: '1rem' }}>
+                <td className="text-right mono font-bold" style={{ color: 'var(--primary)', fontSize: '1rem' }}>
                   {Number(tr.rate_percentage).toFixed(2)}%
                 </td>
                 <td className="text-right mono">{Number(tr.cgst_rate).toFixed(2)}%</td>
                 <td className="text-right mono">{Number(tr.sgst_rate).toFixed(2)}%</td>
                 <td className="text-right mono">{Number(tr.igst_rate).toFixed(2)}%</td>
                 <td className="text-right mono">{Number(tr.cess_rate || 0).toFixed(2)}%</td>
-                <td><Badge status={tr.is_active ? 'ACTIVE' : 'INACTIVE'} /></td>
+                <td><Badge status={(tr.isActive !== undefined ? tr.isActive : tr.is_active) ? 'ACTIVE' : 'INACTIVE'} /></td>
                 <td style={{ textAlign: 'right' }}>
                   <Button
-                    variant={tr.is_active ? 'danger' : 'success'}
+                    variant={(tr.isActive !== undefined ? tr.isActive : tr.is_active) ? 'danger' : 'success'}
                     size="sm"
                     onClick={() => handleToggleStatus(tr)}
                   >
-                    {tr.is_active ? 'Deactivate' : 'Activate'}
+                    {(tr.isActive !== undefined ? tr.isActive : tr.is_active) ? 'Deactivate' : 'Activate'}
                   </Button>
                 </td>
               </tr>
@@ -264,8 +264,8 @@ export function TaxAdmin() {
             {preview && (
               <div
                 style={{
-                  backgroundColor: '#1e293b',
-                  border: '1px solid #334155',
+                  backgroundColor: 'var(--bg-surface-elevated)',
+                  border: '1px solid var(--border-default)',
                   borderRadius: '8px',
                   padding: '12px',
                   marginTop: '4px'
@@ -275,17 +275,17 @@ export function TaxAdmin() {
                   Derived Canonical Split Preview
                 </span>
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '8px', marginTop: '6px', textAlign: 'center' }}>
-                  <div style={{ background: '#0f172a', padding: '6px', borderRadius: '4px' }}>
+                  <div style={{ background: 'var(--bg-surface)', padding: '6px', borderRadius: '4px' }}>
                     <div className="text-xs text-secondary">CGST (50%)</div>
-                    <div className="mono font-bold" style={{ color: '#10b981' }}>{preview.cgst_rate || preview.cgstRate || (parseFloat(form.rate_percentage) / 2).toFixed(2)}%</div>
+                    <div className="mono font-bold" style={{ color: 'var(--success)' }}>{preview.cgst_rate || preview.cgstRate || (parseFloat(form.rate_percentage) / 2).toFixed(2)}%</div>
                   </div>
-                  <div style={{ background: '#0f172a', padding: '6px', borderRadius: '4px' }}>
+                  <div style={{ background: 'var(--bg-surface)', padding: '6px', borderRadius: '4px' }}>
                     <div className="text-xs text-secondary">SGST (50%)</div>
-                    <div className="mono font-bold" style={{ color: '#10b981' }}>{preview.sgst_rate || preview.sgstRate || (parseFloat(form.rate_percentage) / 2).toFixed(2)}%</div>
+                    <div className="mono font-bold" style={{ color: 'var(--success)' }}>{preview.sgst_rate || preview.sgstRate || (parseFloat(form.rate_percentage) / 2).toFixed(2)}%</div>
                   </div>
-                  <div style={{ background: '#0f172a', padding: '6px', borderRadius: '4px' }}>
+                  <div style={{ background: 'var(--bg-surface)', padding: '6px', borderRadius: '4px' }}>
                     <div className="text-xs text-secondary">IGST (100%)</div>
-                    <div className="mono font-bold" style={{ color: '#3b82f6' }}>{preview.igst_rate || preview.igstRate || parseFloat(form.rate_percentage).toFixed(2)}%</div>
+                    <div className="mono font-bold" style={{ color: 'var(--primary)' }}>{preview.igst_rate || preview.igstRate || parseFloat(form.rate_percentage).toFixed(2)}%</div>
                   </div>
                 </div>
               </div>

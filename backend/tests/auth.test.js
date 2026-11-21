@@ -241,12 +241,13 @@ function createMockPool() {
 
       // 6. Insert into audit_logs
       if (lower.includes('insert into audit_logs')) {
+        const isExtended = lower.includes('actor_type');
         auditLogs.push({
           companyId: params[0],
           userId: params[1],
-          action: params[2],
-          entityType: params[3],
-          entityId: params[4]
+          action: isExtended ? params[4] : params[2],
+          entityType: isExtended ? params[5] : params[3],
+          entityId: isExtended ? params[6] : params[4]
         });
         return { rows: [], rowCount: 1 };
       }

@@ -179,12 +179,21 @@ async function validateBrandBelongsToCompany(companyId, brandId) {
 // ============================================================================
 
 async function getDashboardSummary(companyId, options = {}) {
-  const { brandId } = options;
+  const { brandId, preset = 'today', datePreset, startDate, endDate, orderType } = options;
+  const activePreset = datePreset || preset;
+  const filterOrderType = orderType ? String(orderType).toUpperCase() : null;
+
+  let brandInfo = null;
   if (brandId) {
     await validateBrandBelongsToCompany(companyId, brandId);
+    const bRes = await pool.query('SELECT id, name, code FROM brands WHERE id = $1', [brandId]);
+    if (bRes.rows[0]) {
+      brandInfo = { id: bRes.rows[0].id, name: bRes.rows[0].name, code: bRes.rows[0].code };
+    }
   }
 
-  // Time boundaries for Today, Yesterday, and Same Day Last Week
+  // Time boundaries for Selected Preset, Today, Yesterday, and Same Day Last Week
+  const selectedRange = resolveDateRange(activePreset, startDate, endDate);
   const todayRange = resolveDateRange('today');
   const yesterdayRange = resolveDateRange('yesterday');
 
@@ -207,16 +216,21 @@ async function getDashboardSummary(companyId, options = {}) {
       const q = `
         SELECT
           COUNT(DISTINCT ii.invoice_id)::int as invoice_count,
+          COALESCE(SUM(ii.quantity), 0)::int as items_sold,
           COALESCE(SUM(ii.gross_amount), 0.00)::numeric(14,2) as gross_sales,
           COALESCE(SUM(ii.discount_amount), 0.00)::numeric(14,2) as total_discounts,
           COALESCE(SUM(ii.taxable_value), 0.00)::numeric(14,2) as taxable_amount,
           COALESCE(SUM(ii.cgst_amount + ii.sgst_amount + ii.igst_amount + ii.cess_amount), 0.00)::numeric(14,2) as total_tax,
+          COALESCE(SUM(ii.cgst_amount), 0.00)::numeric(14,2) as cgst,
+          COALESCE(SUM(ii.sgst_amount), 0.00)::numeric(14,2) as sgst,
+          COALESCE(SUM(ii.igst_amount), 0.00)::numeric(14,2) as igst,
+          COALESCE(SUM(ii.cess_amount), 0.00)::numeric(14,2) as cess,
           COALESCE(SUM(ii.line_total), 0.00)::numeric(14,2) as net_sales
         FROM invoice_items ii
         JOIN invoices i ON ii.invoice_id = i.id
         WHERE i.company_id = $1
           AND ii.brand_id = $2
-          AND i.payment_status != 'VOIDED'
+          AND i.payment_status NOT IN ('VOIDED', 'PENDING')
           AND i.created_at >= $3
           AND i.created_at < $4;
       `;
@@ -227,10 +241,16 @@ async function getDashboardSummary(companyId, options = {}) {
       const aov = invCount > 0 ? (netSales / invCount).toFixed(2) : '0.00';
       return {
         invoiceCount: invCount,
+        invoiceCountLabel: 'Invoices containing brand',
+        itemsSold: Number(r.items_sold || 0),
         grossSales: Number(r.gross_sales).toFixed(2),
         totalDiscounts: Number(r.total_discounts).toFixed(2),
         taxableAmount: Number(r.taxable_amount).toFixed(2),
         totalTax: Number(r.total_tax).toFixed(2),
+        cgst: Number(r.cgst || 0).toFixed(2),
+        sgst: Number(r.sgst || 0).toFixed(2),
+        igst: Number(r.igst || 0).toFixed(2),
+        cess: Number(r.cess || 0).toFixed(2),
         netSales: netSales.toFixed(2),
         averageInvoiceValue: aov
       };
@@ -239,14 +259,27 @@ async function getDashboardSummary(companyId, options = {}) {
       const q = `
         SELECT
           COUNT(id)::int as invoice_count,
+          COALESCE((
+            SELECT SUM(ii.quantity)::int
+            FROM invoice_items ii
+            JOIN invoices inv ON ii.invoice_id = inv.id
+            WHERE inv.company_id = $1
+              AND inv.payment_status NOT IN ('VOIDED', 'PENDING')
+              AND inv.created_at >= $2
+              AND inv.created_at < $3
+          ), 0)::int as items_sold,
           COALESCE(SUM(subtotal_gross), 0.00)::numeric(14,2) as gross_sales,
           COALESCE(SUM(total_discount_amount), 0.00)::numeric(14,2) as total_discounts,
           COALESCE(SUM(total_taxable_amount), 0.00)::numeric(14,2) as taxable_amount,
           COALESCE(SUM(total_cgst_amount + total_sgst_amount + total_igst_amount + total_cess_amount), 0.00)::numeric(14,2) as total_tax,
+          COALESCE(SUM(total_cgst_amount), 0.00)::numeric(14,2) as cgst,
+          COALESCE(SUM(total_sgst_amount), 0.00)::numeric(14,2) as sgst,
+          COALESCE(SUM(total_igst_amount), 0.00)::numeric(14,2) as igst,
+          COALESCE(SUM(total_cess_amount), 0.00)::numeric(14,2) as cess,
           COALESCE(SUM(grand_total), 0.00)::numeric(14,2) as net_sales
         FROM invoices
         WHERE company_id = $1
-          AND payment_status != 'VOIDED'
+          AND payment_status NOT IN ('VOIDED', 'PENDING')
           AND created_at >= $2
           AND created_at < $3;
       `;
@@ -257,18 +290,25 @@ async function getDashboardSummary(companyId, options = {}) {
       const aov = invCount > 0 ? (netSales / invCount).toFixed(2) : '0.00';
       return {
         invoiceCount: invCount,
+        invoiceCountLabel: 'Total Invoices',
+        itemsSold: Number(r.items_sold || 0),
         grossSales: Number(r.gross_sales).toFixed(2),
         totalDiscounts: Number(r.total_discounts).toFixed(2),
         taxableAmount: Number(r.taxable_amount).toFixed(2),
         totalTax: Number(r.total_tax).toFixed(2),
+        cgst: Number(r.cgst || 0).toFixed(2),
+        sgst: Number(r.sgst || 0).toFixed(2),
+        igst: Number(r.igst || 0).toFixed(2),
+        cess: Number(r.cess || 0).toFixed(2),
         netSales: netSales.toFixed(2),
         averageInvoiceValue: aov
       };
     }
   }
 
-  // Fetch sales for Today, Yesterday, Same Day Last Week, and MTD
-  const [todaySales, yesterdaySales, sdlwSales, mtdSales] = await Promise.all([
+  // Fetch sales for Selected Preset, Today, Yesterday, Same Day Last Week, and MTD
+  const [summarySales, todaySales, yesterdaySales, sdlwSales, mtdSales] = await Promise.all([
+    fetchSalesAggregates(selectedRange.start, selectedRange.end),
     fetchSalesAggregates(todayRange.start, todayRange.end),
     fetchSalesAggregates(yesterdayRange.start, yesterdayRange.end),
     fetchSalesAggregates(sdlwStart, sdlwEnd),
@@ -304,21 +344,45 @@ async function getDashboardSummary(companyId, options = {}) {
   paymentTotals.totalSuccessfulAmount = totalPay.toFixed(2);
   paymentTotals.totalSuccessfulCount = totalCount;
 
-  // Refunds for Today
-  const refundsQuery = `
-    SELECT
-      COUNT(*)::int as refund_count,
-      COALESCE(SUM(amount), 0.00)::numeric(14,2) as total_refunds
-    FROM refund_vouchers
-    WHERE company_id = $1
-      AND status = 'COMPLETED'
-      AND created_at >= $2
-      AND created_at < $3;
-  `;
-  const refundsRes = await pool.query(refundsQuery, [companyId, todayRange.start, todayRange.end]);
-  const todayRefunds = {
-    count: refundsRes.rows[0].refund_count,
-    amount: Number(refundsRes.rows[0].total_refunds).toFixed(2)
+  // Refunds for Selected Period (with proportional brand allocation)
+  let selectedRefundsRes;
+  if (brandId) {
+    const brandRefundsQuery = `
+      SELECT
+        COUNT(DISTINCT rv.id)::int as refund_count,
+        COALESCE(SUM(
+          ROUND((brand_lines.brand_line_total / NULLIF(i.grand_total, 0)) * rv.amount, 2)
+        ), 0.00)::numeric(14,2) as total_refunds
+      FROM refund_vouchers rv
+      JOIN invoices i ON rv.invoice_id = i.id
+      JOIN (
+        SELECT invoice_id, SUM(line_total) as brand_line_total
+        FROM invoice_items
+        WHERE brand_id = $4
+        GROUP BY invoice_id
+      ) brand_lines ON i.id = brand_lines.invoice_id
+      WHERE rv.company_id = $1
+        AND rv.status = 'COMPLETED'
+        AND rv.created_at >= $2
+        AND rv.created_at < $3;
+    `;
+    selectedRefundsRes = await pool.query(brandRefundsQuery, [companyId, selectedRange.start, selectedRange.end, brandId]);
+  } else {
+    const refundsQuery = `
+      SELECT
+        COUNT(*)::int as refund_count,
+        COALESCE(SUM(amount), 0.00)::numeric(14,2) as total_refunds
+      FROM refund_vouchers
+      WHERE company_id = $1
+        AND status = 'COMPLETED'
+        AND created_at >= $2
+        AND created_at < $3;
+    `;
+    selectedRefundsRes = await pool.query(refundsQuery, [companyId, selectedRange.start, selectedRange.end]);
+  }
+  const selectedRefunds = {
+    count: selectedRefundsRes.rows[0].refund_count,
+    amount: Number(selectedRefundsRes.rows[0].total_refunds).toFixed(2)
   };
 
   // Outstanding/Pending Invoices
@@ -362,7 +426,7 @@ async function getDashboardSummary(companyId, options = {}) {
     }
   };
 
-  // Top-selling products for Today (or MTD if today has few sales)
+  // Top-selling products for Selected Period
   const topProductsQuery = `
     SELECT
       ii.product_id,
@@ -375,16 +439,16 @@ async function getDashboardSummary(companyId, options = {}) {
     JOIN invoices i ON ii.invoice_id = i.id
     WHERE i.company_id = $1
       ${brandId ? 'AND ii.brand_id = $4' : ''}
-      AND i.payment_status != 'VOIDED'
+      AND i.payment_status NOT IN ('VOIDED', 'PENDING')
       AND i.created_at >= $2
       AND i.created_at < $3
     GROUP BY ii.product_id, ii.sku_snapshot, ii.item_name_snapshot, ii.brand_name_snapshot
     ORDER BY total_quantity DESC, total_revenue DESC
-    LIMIT 5;
+    LIMIT 10;
   `;
   const topParams = brandId
-    ? [companyId, todayRange.start, todayRange.end, brandId]
-    : [companyId, todayRange.start, todayRange.end];
+    ? [companyId, selectedRange.start, selectedRange.end, brandId]
+    : [companyId, selectedRange.start, selectedRange.end];
   const topProductsRes = await pool.query(topProductsQuery, topParams);
   const topSellingProducts = topProductsRes.rows.map(r => ({
     productId: r.product_id,
@@ -393,6 +457,91 @@ async function getDashboardSummary(companyId, options = {}) {
     brandName: r.brand_name,
     totalQuantity: r.total_quantity,
     totalRevenue: Number(r.total_revenue).toFixed(2)
+  }));
+
+  // Category-wise Sales Breakdown for Selected Period
+  const categorySalesQuery = `
+    SELECT
+      c.id as category_id,
+      c.name as category_name,
+      COALESCE(b.name, 'Unassigned') as brand_name,
+      b.code as brand_code,
+      COUNT(DISTINCT ii.invoice_id)::int as invoice_count,
+      COALESCE(SUM(ii.quantity), 0)::int as items_sold,
+      COALESCE(SUM(ii.gross_amount), 0.00)::numeric(14,2) as gross_sales,
+      COALESCE(SUM(ii.taxable_value), 0.00)::numeric(14,2) as taxable_amount,
+      COALESCE(SUM(ii.cgst_amount + ii.sgst_amount + ii.igst_amount + ii.cess_amount), 0.00)::numeric(14,2) as total_tax,
+      COALESCE(SUM(ii.line_total), 0.00)::numeric(14,2) as net_sales
+    FROM invoice_items ii
+    JOIN products p ON ii.product_id = p.id
+    JOIN categories c ON p.category_id = c.id
+    LEFT JOIN brands b ON ii.brand_id = b.id
+    JOIN invoices i ON ii.invoice_id = i.id
+    WHERE i.company_id = $1
+      ${brandId ? 'AND ii.brand_id = $4' : ''}
+      AND i.payment_status NOT IN ('VOIDED', 'PENDING')
+      AND i.created_at >= $2
+      AND i.created_at < $3
+    GROUP BY c.id, c.name, b.name, b.code
+    ORDER BY net_sales DESC;
+  `;
+  const catParams = brandId
+    ? [companyId, selectedRange.start, selectedRange.end, brandId]
+    : [companyId, selectedRange.start, selectedRange.end];
+  const catRes = await pool.query(categorySalesQuery, catParams);
+  const categorySales = catRes.rows.map(r => ({
+    categoryId: r.category_id,
+    categoryName: r.category_name,
+    brandName: r.brand_name,
+    brandCode: r.brand_code,
+    invoiceCount: r.invoice_count,
+    itemsSold: r.items_sold,
+    grossSales: Number(r.gross_sales).toFixed(2),
+    taxableAmount: Number(r.taxable_amount).toFixed(2),
+    totalTax: Number(r.total_tax).toFixed(2),
+    netSales: Number(r.net_sales).toFixed(2)
+  }));
+
+  // Statutory Tax Allocation Breakdown for Selected Period
+  const taxBreakdownQuery = `
+    SELECT
+      CONCAT(ii.tax_rate_percentage, '% GST') as slab_name,
+      ii.tax_rate_percentage::numeric(5,2) as tax_rate,
+      COUNT(DISTINCT ii.invoice_id)::int as invoice_count,
+      COALESCE(SUM(ii.quantity), 0)::int as items_sold,
+      COALESCE(SUM(ii.taxable_value), 0.00)::numeric(14,2) as taxable_amount,
+      COALESCE(SUM(ii.cgst_amount), 0.00)::numeric(14,2) as cgst,
+      COALESCE(SUM(ii.sgst_amount), 0.00)::numeric(14,2) as sgst,
+      COALESCE(SUM(ii.igst_amount), 0.00)::numeric(14,2) as igst,
+      COALESCE(SUM(ii.cess_amount), 0.00)::numeric(14,2) as cess,
+      COALESCE(SUM(ii.cgst_amount + ii.sgst_amount + ii.igst_amount + ii.cess_amount), 0.00)::numeric(14,2) as total_tax,
+      COALESCE(SUM(ii.line_total), 0.00)::numeric(14,2) as net_sales
+    FROM invoice_items ii
+    JOIN invoices i ON ii.invoice_id = i.id
+    WHERE i.company_id = $1
+      ${brandId ? 'AND ii.brand_id = $4' : ''}
+      AND i.payment_status NOT IN ('VOIDED', 'PENDING')
+      AND i.created_at >= $2
+      AND i.created_at < $3
+    GROUP BY ii.tax_rate_percentage
+    ORDER BY tax_rate ASC;
+  `;
+  const taxParams = brandId
+    ? [companyId, selectedRange.start, selectedRange.end, brandId]
+    : [companyId, selectedRange.start, selectedRange.end];
+  const taxRes = await pool.query(taxBreakdownQuery, taxParams);
+  const taxBreakdown = taxRes.rows.map(r => ({
+    slabName: r.slab_name,
+    taxRate: Number(r.tax_rate).toFixed(2),
+    invoiceCount: r.invoice_count,
+    itemsSold: r.items_sold,
+    taxableAmount: Number(r.taxable_amount).toFixed(2),
+    cgst: Number(r.cgst).toFixed(2),
+    sgst: Number(r.sgst).toFixed(2),
+    igst: Number(r.igst).toFixed(2),
+    cess: Number(r.cess).toFixed(2),
+    totalTax: Number(r.total_tax).toFixed(2),
+    netSales: Number(r.net_sales).toFixed(2)
   }));
 
   // Brand-wise performance breakdown for Today
@@ -411,7 +560,7 @@ async function getDashboardSummary(companyId, options = {}) {
     FROM brands b
     LEFT JOIN invoice_items ii ON b.id = ii.brand_id
     LEFT JOIN invoices i ON ii.invoice_id = i.id
-      AND i.payment_status != 'VOIDED'
+      AND i.payment_status NOT IN ('VOIDED', 'PENDING')
       AND i.created_at >= $2
       AND i.created_at < $3
     WHERE b.company_id = $1 AND b.is_active = TRUE
@@ -431,6 +580,48 @@ async function getDashboardSummary(companyId, options = {}) {
     taxes: Number(r.taxes).toFixed(2),
     netSales: Number(r.net_sales).toFixed(2)
   }));
+
+  // Order Type Breakdown (Dine-in vs Parcel / Takeaway) for Selected Period
+  const orderTypeQuery = `
+    SELECT
+      COALESCE(i.order_type, 'PARCEL') as order_type,
+      COUNT(DISTINCT i.id)::int as invoice_count,
+      COALESCE(SUM(i.grand_total), 0.00)::numeric(14,2) as net_sales,
+      COALESCE(SUM(i.total_taxable_amount), 0.00)::numeric(14,2) as taxable_amount,
+      COALESCE(SUM(i.total_cgst_amount + i.total_sgst_amount + i.total_igst_amount + i.total_cess_amount), 0.00)::numeric(14,2) as total_tax
+    FROM invoices i
+    ${brandId ? 'JOIN invoice_items ii ON i.id = ii.invoice_id AND ii.brand_id = $4' : ''}
+    WHERE i.company_id = $1
+      AND i.payment_status NOT IN ('VOIDED', 'PENDING')
+      AND i.created_at >= $2
+      AND i.created_at < $3
+    GROUP BY i.order_type;
+  `;
+  const otParams = brandId
+    ? [companyId, selectedRange.start, selectedRange.end, brandId]
+    : [companyId, selectedRange.start, selectedRange.end];
+  const orderTypeRes = await pool.query(orderTypeQuery, otParams);
+  const orderTypeBreakdown = {
+    dineIn: { invoiceCount: 0, netSales: '0.00', taxableAmount: '0.00', totalTax: '0.00' },
+    parcel: { invoiceCount: 0, netSales: '0.00', taxableAmount: '0.00', totalTax: '0.00' }
+  };
+  for (const row of orderTypeRes.rows) {
+    if (row.order_type === 'DINE_IN') {
+      orderTypeBreakdown.dineIn = {
+        invoiceCount: row.invoice_count,
+        netSales: Number(row.net_sales).toFixed(2),
+        taxableAmount: Number(row.taxable_amount).toFixed(2),
+        totalTax: Number(row.total_tax).toFixed(2)
+      };
+    } else {
+      orderTypeBreakdown.parcel = {
+        invoiceCount: row.invoice_count,
+        netSales: Number(row.net_sales).toFixed(2),
+        taxableAmount: Number(row.taxable_amount).toFixed(2),
+        totalTax: Number(row.total_tax).toFixed(2)
+      };
+    }
+  }
 
   // Inventory Alerts & Valuation (Migration 018 integration)
   const invSummaryQuery = `
@@ -498,7 +689,7 @@ async function getDashboardSummary(companyId, options = {}) {
     FROM invoices i
     ${brandId ? 'JOIN invoice_items ii ON i.id = ii.invoice_id AND ii.brand_id = $4' : ''}
     WHERE i.company_id = $1
-      AND i.payment_status != 'VOIDED'
+      AND i.payment_status NOT IN ('VOIDED', 'PENDING')
       AND i.created_at >= $2
       AND i.created_at < $3
     GROUP BY hour
@@ -527,16 +718,21 @@ async function getDashboardSummary(companyId, options = {}) {
   }
 
   return {
-    period: todayRange,
-    summary: todaySales,
+    period: selectedRange,
+    summary: summarySales,
+    todaySummary: todaySales,
+    brand: brandInfo,
     comparisons,
     mtdSummary: mtdSales,
     payments: paymentTotals,
-    refunds: todayRefunds,
+    refunds: selectedRefunds,
     pendingInvoices,
     hourlySales,
     brandPerformance,
+    orderTypeBreakdown,
     topSellingProducts,
+    categorySales,
+    taxBreakdown,
     inventory: {
       valuation: Number(invRow.total_valuation).toFixed(2),
       lowStockCount: invRow.low_stock_count,
@@ -839,7 +1035,7 @@ async function getHourlySalesReport(companyId, options = {}) {
     FROM invoices i
     ${brandId ? 'JOIN invoice_items ii ON i.id = ii.invoice_id AND ii.brand_id = $4' : ''}
     WHERE i.company_id = $1
-      AND i.payment_status != 'VOIDED'
+      AND i.payment_status NOT IN ('VOIDED', 'PENDING')
       AND i.created_at >= $2
       AND i.created_at < $3
     GROUP BY hour
@@ -901,7 +1097,7 @@ async function getBrandWiseSalesReport(companyId, options = {}) {
     FROM brands b
     LEFT JOIN invoice_items ii ON b.id = ii.brand_id
     LEFT JOIN invoices i ON ii.invoice_id = i.id
-      AND i.payment_status != 'VOIDED'
+      AND i.payment_status NOT IN ('VOIDED', 'PENDING')
       AND i.created_at >= $2
       AND i.created_at < $3
     WHERE b.company_id = $1 AND b.is_active = TRUE
@@ -964,7 +1160,7 @@ async function getProductWiseSalesReport(companyId, options = {}) {
     JOIN invoices i ON ii.invoice_id = i.id
     WHERE i.company_id = $1
       ${brandId ? 'AND ii.brand_id = $4' : ''}
-      AND i.payment_status != 'VOIDED'
+      AND i.payment_status NOT IN ('VOIDED', 'PENDING')
       AND i.created_at >= $2
       AND i.created_at < $3;
   `;
@@ -990,7 +1186,7 @@ async function getProductWiseSalesReport(companyId, options = {}) {
     JOIN invoices i ON ii.invoice_id = i.id
     WHERE i.company_id = $1
       ${brandId ? 'AND ii.brand_id = $4' : ''}
-      AND i.payment_status != 'VOIDED'
+      AND i.payment_status NOT IN ('VOIDED', 'PENDING')
       AND i.created_at >= $2
       AND i.created_at < $3
     GROUP BY ii.product_id, ii.sku_snapshot, ii.item_name_snapshot, ii.brand_name_snapshot, ii.hsn_sac_code_snapshot, ii.is_kitchen_item_snapshot
@@ -1055,7 +1251,7 @@ async function getCategoryWiseSalesReport(companyId, options = {}) {
     LEFT JOIN categories c ON p.category_id = c.id
     WHERE i.company_id = $1
       ${brandId ? 'AND ii.brand_id = $4' : ''}
-      AND i.payment_status != 'VOIDED'
+      AND i.payment_status NOT IN ('VOIDED', 'PENDING')
       AND i.created_at >= $2
       AND i.created_at < $3
     GROUP BY c.id, c.name
@@ -1097,7 +1293,7 @@ async function getCashierWiseSalesReport(companyId, options = {}) {
       COALESCE(SUM(i.grand_total), 0.00)::numeric(14,2) as net_sales
     FROM invoices i
     WHERE i.company_id = $1
-      AND i.payment_status != 'VOIDED'
+      AND i.payment_status NOT IN ('VOIDED', 'PENDING')
       AND i.created_at >= $2
       AND i.created_at < $3
     GROUP BY i.cashier_id, i.cashier_name_snapshot
@@ -1147,7 +1343,7 @@ async function getTaxSummaryReport(companyId, options = {}) {
     JOIN invoices i ON ii.invoice_id = i.id
     WHERE i.company_id = $1
       ${brandId ? 'AND ii.brand_id = $4' : ''}
-      AND i.payment_status != 'VOIDED'
+      AND i.payment_status NOT IN ('VOIDED', 'PENDING')
       AND i.created_at >= $2
       AND i.created_at < $3
     GROUP BY ii.tax_rate_percentage
@@ -1172,7 +1368,7 @@ async function getTaxSummaryReport(companyId, options = {}) {
     FROM invoices i
     LEFT JOIN statutory_gst_state_codes sc ON i.place_of_supply_state = sc.state_code
     WHERE i.company_id = $1
-      AND i.payment_status != 'VOIDED'
+      AND i.payment_status NOT IN ('VOIDED', 'PENDING')
       AND i.created_at >= $2
       AND i.created_at < $3
     GROUP BY i.place_of_supply_state, sc.state_name, i.is_interstate
@@ -1243,29 +1439,76 @@ async function getTaxSummaryReport(companyId, options = {}) {
 }
 
 /**
- * 4.2 Payment-Method Report
+ * 4.2 Payment-Method Report (Supports brand segregation and consolidated multi-brand reporting)
  */
 async function getPaymentMethodReport(companyId, options = {}) {
-  const { preset = 'this_month', startDate, endDate } = options;
+  const { preset = 'this_month', startDate, endDate, brandId } = options;
+  if (brandId) await validateBrandBelongsToCompany(companyId, brandId);
   const range = resolveDateRange(preset, startDate, endDate);
 
-  const query = `
-    SELECT
-      payment_method,
-      COUNT(*)::int as transaction_count,
-      COALESCE(SUM(amount), 0.00)::numeric(14,2) as total_collected,
-      COALESCE(SUM(tendered_amount), 0.00)::numeric(14,2) as total_tendered,
-      COALESCE(SUM(change_returned), 0.00)::numeric(14,2) as total_change_returned
-    FROM payments
-    WHERE company_id = $1
-      AND status = 'SUCCESS'
-      AND created_at >= $2
-      AND created_at < $3
-    GROUP BY payment_method
-    ORDER BY total_collected DESC;
-  `;
+  // If brandId specified, attribute payments proportionally to brand sales on those invoices
+  let query;
+  let params;
 
-  const res = await pool.query(query, [companyId, range.start, range.end]);
+  if (brandId) {
+    query = `
+      SELECT
+        p.payment_method,
+        COUNT(DISTINCT p.id)::int as transaction_count,
+        COALESCE(SUM(
+          ROUND(p.amount * (
+            SELECT COALESCE(SUM(ii.line_total), 0) / NULLIF(inv.grand_total, 0)
+            FROM invoice_items ii
+            WHERE ii.invoice_id = p.invoice_id AND ii.brand_id = $4
+          ), 2)
+        ), 0.00)::numeric(14,2) as total_collected,
+        COALESCE(SUM(
+          ROUND(p.tendered_amount * (
+            SELECT COALESCE(SUM(ii.line_total), 0) / NULLIF(inv.grand_total, 0)
+            FROM invoice_items ii
+            WHERE ii.invoice_id = p.invoice_id AND ii.brand_id = $4
+          ), 2)
+        ), 0.00)::numeric(14,2) as total_tendered,
+        COALESCE(SUM(
+          ROUND(p.change_returned * (
+            SELECT COALESCE(SUM(ii.line_total), 0) / NULLIF(inv.grand_total, 0)
+            FROM invoice_items ii
+            WHERE ii.invoice_id = p.invoice_id AND ii.brand_id = $4
+          ), 2)
+        ), 0.00)::numeric(14,2) as total_change_returned
+      FROM payments p
+      JOIN invoices inv ON p.invoice_id = inv.id
+      WHERE p.company_id = $1
+        AND p.status = 'SUCCESS'
+        AND p.created_at >= $2
+        AND p.created_at < $3
+        AND EXISTS (
+          SELECT 1 FROM invoice_items ii WHERE ii.invoice_id = p.invoice_id AND ii.brand_id = $4
+        )
+      GROUP BY p.payment_method
+      ORDER BY total_collected DESC;
+    `;
+    params = [companyId, range.start, range.end, brandId];
+  } else {
+    query = `
+      SELECT
+        payment_method,
+        COUNT(*)::int as transaction_count,
+        COALESCE(SUM(amount), 0.00)::numeric(14,2) as total_collected,
+        COALESCE(SUM(tendered_amount), 0.00)::numeric(14,2) as total_tendered,
+        COALESCE(SUM(change_returned), 0.00)::numeric(14,2) as total_change_returned
+      FROM payments
+      WHERE company_id = $1
+        AND status = 'SUCCESS'
+        AND created_at >= $2
+        AND created_at < $3
+      GROUP BY payment_method
+      ORDER BY total_collected DESC;
+    `;
+    params = [companyId, range.start, range.end];
+  }
+
+  const res = await pool.query(query, params);
 
   let grandCollected = 0;
   let grandTxCount = 0;
@@ -1287,13 +1530,118 @@ async function getPaymentMethodReport(companyId, options = {}) {
     };
   });
 
+  // Also fetch brand-level distribution for multi-brand consolidation
+  const brandQuery = `
+    SELECT
+      b.id as brand_id,
+      b.name as brand_name,
+      b.code as brand_code,
+      COALESCE(SUM(ii.line_total), 0.00)::numeric(14,2) as total_sales
+    FROM brands b
+    LEFT JOIN invoice_items ii ON ii.brand_id = b.id
+    LEFT JOIN invoices inv ON ii.invoice_id = inv.id
+      AND inv.company_id = $1
+      AND inv.payment_status = 'PAID'
+      AND inv.created_at >= $2
+      AND inv.created_at < $3
+    WHERE b.company_id = $1
+    GROUP BY b.id, b.name, b.code
+    ORDER BY total_sales DESC;
+  `;
+  const brandRes = await pool.query(brandQuery, [companyId, range.start, range.end]);
+
+  let allBrandsSales = 0;
+  for (const br of brandRes.rows) {
+    allBrandsSales += Number(br.total_sales);
+  }
+
+  const brands = brandRes.rows.map(br => {
+    const sales = Number(br.total_sales);
+    return {
+      brandId: br.brand_id,
+      brandName: br.brand_name,
+      brandCode: br.brand_code,
+      totalSales: sales.toFixed(2),
+      sharePercentage: allBrandsSales > 0 ? Number(((sales / allBrandsSales) * 100).toFixed(2)) : 0
+    };
+  });
+
   return {
     period: range,
+    brandId: brandId || null,
     summary: {
       totalTransactions: grandTxCount,
       totalCollected: grandCollected.toFixed(2)
     },
     methods,
+    brands,
+    meta: { disclaimer: STATUTORY_DISCLAIMER }
+  };
+}
+
+/**
+ * 4.2b Cashier Shift Reconciliation Report
+ */
+async function getCashierReconciliationReport(companyId, options = {}) {
+  const { preset = 'this_month', startDate, endDate, cashierId } = options;
+  const range = resolveDateRange(preset, startDate, endDate);
+
+  const conditions = ['cs.company_id = $1', 'cs.opened_at >= $2', 'cs.opened_at < $3'];
+  const params = [companyId, range.start, range.end];
+  let idx = 4;
+
+  if (cashierId) {
+    conditions.push(`cs.cashier_id = $${idx++}`);
+    params.push(cashierId);
+  }
+
+  const query = `
+    SELECT
+      cs.id, cs.company_id, cs.cashier_id,
+      u.full_name as cashier_name, u.username as cashier_username,
+      cs.opened_at, cs.closed_at, cs.opening_float,
+      cs.expected_cash, cs.actual_cash, cs.variance,
+      cs.status, cs.notes, cs.created_at
+    FROM cashier_shifts cs
+    JOIN users u ON cs.cashier_id = u.id
+    WHERE ${conditions.join(' AND ')}
+    ORDER BY cs.opened_at DESC;
+  `;
+
+  const res = await pool.query(query, params);
+
+  let totalOpeningFloat = 0;
+  let totalExpectedCash = 0;
+  let totalActualCash = 0;
+  let totalVariance = 0;
+  let closedShiftsCount = 0;
+  let openShiftsCount = 0;
+
+  for (const row of res.rows) {
+    totalOpeningFloat += Number(row.opening_float || 0);
+    if (row.status === 'CLOSED') {
+      closedShiftsCount++;
+      totalExpectedCash += Number(row.expected_cash || 0);
+      totalActualCash += Number(row.actual_cash || 0);
+      totalVariance += Number(row.variance || 0);
+    } else {
+      openShiftsCount++;
+    }
+  }
+
+  return {
+    period: range,
+    summary: {
+      totalShifts: res.rows.length,
+      closedShiftsCount,
+      openShiftsCount,
+      totalOpeningFloat: totalOpeningFloat.toFixed(2),
+      totalExpectedCash: totalExpectedCash.toFixed(2),
+      totalActualCash: totalActualCash.toFixed(2),
+      totalVariance: totalVariance.toFixed(2),
+      overallStatus: totalVariance === 0 ? 'BALANCED' : totalVariance > 0 ? 'OVERAGE' : 'SHORTAGE'
+    },
+    shifts: res.rows,
     meta: { disclaimer: STATUTORY_DISCLAIMER }
   };
 }
@@ -1302,7 +1650,8 @@ async function getPaymentMethodReport(companyId, options = {}) {
  * 4.3 Refund Report
  */
 async function getRefundReport(companyId, options = {}) {
-  const { preset = 'this_month', startDate, endDate, page = 1, limit = 50 } = options;
+  const { preset = 'this_month', startDate, endDate, brandId, page = 1, limit = 50 } = options;
+  if (brandId) await validateBrandBelongsToCompany(companyId, brandId);
   const range = resolveDateRange(preset, startDate, endDate);
 
   const pageNum = Math.max(1, parseInt(page, 10) || 1);
@@ -1310,51 +1659,119 @@ async function getRefundReport(companyId, options = {}) {
   const offset = (pageNum - 1) * limitNum;
 
   // Aggregate summary
-  const aggQuery = `
-    SELECT
-      COUNT(*)::int as total_refunds,
-      COALESCE(SUM(amount), 0.00)::numeric(14,2) as total_refund_amount
-    FROM refund_vouchers
-    WHERE company_id = $1
-      AND status = 'COMPLETED'
-      AND created_at >= $2
-      AND created_at < $3;
-  `;
-  const aggRes = await pool.query(aggQuery, [companyId, range.start, range.end]);
-  const totalCount = aggRes.rows[0].total_refunds;
-  const totalAmount = Number(aggRes.rows[0].total_refund_amount).toFixed(2);
+  let totalCount = 0;
+  let totalAmount = '0.00';
+
+  if (brandId) {
+    const aggQuery = `
+      SELECT
+        COUNT(DISTINCT rv.id)::int as total_refunds,
+        COALESCE(SUM(
+          ROUND((brand_lines.brand_line_total / NULLIF(i.grand_total, 0)) * rv.amount, 2)
+        ), 0.00)::numeric(14,2) as total_refund_amount
+      FROM refund_vouchers rv
+      JOIN invoices i ON rv.invoice_id = i.id
+      JOIN (
+        SELECT invoice_id, SUM(line_total) as brand_line_total
+        FROM invoice_items
+        WHERE brand_id = $4
+        GROUP BY invoice_id
+      ) brand_lines ON i.id = brand_lines.invoice_id
+      WHERE rv.company_id = $1
+        AND rv.status = 'COMPLETED'
+        AND rv.created_at >= $2
+        AND rv.created_at < $3;
+    `;
+    const aggRes = await pool.query(aggQuery, [companyId, range.start, range.end, brandId]);
+    totalCount = aggRes.rows[0].total_refunds;
+    totalAmount = Number(aggRes.rows[0].total_refund_amount).toFixed(2);
+  } else {
+    const aggQuery = `
+      SELECT
+        COUNT(*)::int as total_refunds,
+        COALESCE(SUM(amount), 0.00)::numeric(14,2) as total_refund_amount
+      FROM refund_vouchers
+      WHERE company_id = $1
+        AND status = 'COMPLETED'
+        AND created_at >= $2
+        AND created_at < $3;
+    `;
+    const aggRes = await pool.query(aggQuery, [companyId, range.start, range.end]);
+    totalCount = aggRes.rows[0].total_refunds;
+    totalAmount = Number(aggRes.rows[0].total_refund_amount).toFixed(2);
+  }
 
   // Paginated list
-  const listQuery = `
-    SELECT
-      rv.id,
-      rv.invoice_id,
-      i.invoice_number,
-      rv.amount,
-      rv.reason,
-      rv.created_at,
-      u.full_name as processed_by
-    FROM refund_vouchers rv
-    JOIN invoices i ON rv.invoice_id = i.id
-    LEFT JOIN users u ON rv.created_by = u.id
-    WHERE rv.company_id = $1
-      AND rv.status = 'COMPLETED'
-      AND rv.created_at >= $2
-      AND rv.created_at < $3
-    ORDER BY rv.created_at DESC
-    LIMIT $4 OFFSET $5;
-  `;
-  const listRes = await pool.query(listQuery, [companyId, range.start, range.end, limitNum, offset]);
-
-  const refunds = listRes.rows.map(r => ({
-    id: r.id,
-    invoiceId: r.invoice_id,
-    invoiceNumber: r.invoice_number,
-    amount: Number(r.amount).toFixed(2),
-    reason: r.reason,
-    processedBy: r.processed_by || 'Unknown',
-    createdAt: r.created_at
-  }));
+  let refunds = [];
+  if (brandId) {
+    const listQuery = `
+      SELECT
+        rv.id,
+        rv.invoice_id,
+        i.invoice_number,
+        ROUND((brand_lines.brand_line_total / NULLIF(i.grand_total, 0)) * rv.amount, 2)::numeric(14,2) as brand_refund_amount,
+        rv.amount as full_voucher_amount,
+        rv.reason,
+        rv.created_at,
+        u.full_name as processed_by
+      FROM refund_vouchers rv
+      JOIN invoices i ON rv.invoice_id = i.id
+      JOIN (
+        SELECT invoice_id, SUM(line_total) as brand_line_total
+        FROM invoice_items
+        WHERE brand_id = $4
+        GROUP BY invoice_id
+      ) brand_lines ON i.id = brand_lines.invoice_id
+      LEFT JOIN users u ON rv.created_by = u.id
+      WHERE rv.company_id = $1
+        AND rv.status = 'COMPLETED'
+        AND rv.created_at >= $2
+        AND rv.created_at < $3
+      ORDER BY rv.created_at DESC
+      LIMIT $5 OFFSET $6;
+    `;
+    const listRes = await pool.query(listQuery, [companyId, range.start, range.end, brandId, limitNum, offset]);
+    refunds = listRes.rows.map(r => ({
+      id: r.id,
+      invoiceId: r.invoice_id,
+      invoiceNumber: r.invoice_number,
+      amount: Number(r.brand_refund_amount).toFixed(2),
+      fullVoucherAmount: Number(r.full_voucher_amount).toFixed(2),
+      reason: r.reason,
+      processedBy: r.processed_by || 'Unknown',
+      createdAt: r.created_at
+    }));
+  } else {
+    const listQuery = `
+      SELECT
+        rv.id,
+        rv.invoice_id,
+        i.invoice_number,
+        rv.amount,
+        rv.reason,
+        rv.created_at,
+        u.full_name as processed_by
+      FROM refund_vouchers rv
+      JOIN invoices i ON rv.invoice_id = i.id
+      LEFT JOIN users u ON rv.created_by = u.id
+      WHERE rv.company_id = $1
+        AND rv.status = 'COMPLETED'
+        AND rv.created_at >= $2
+        AND rv.created_at < $3
+      ORDER BY rv.created_at DESC
+      LIMIT $4 OFFSET $5;
+    `;
+    const listRes = await pool.query(listQuery, [companyId, range.start, range.end, limitNum, offset]);
+    refunds = listRes.rows.map(r => ({
+      id: r.id,
+      invoiceId: r.invoice_id,
+      invoiceNumber: r.invoice_number,
+      amount: Number(r.amount).toFixed(2),
+      reason: r.reason,
+      processedBy: r.processed_by || 'Unknown',
+      createdAt: r.created_at
+    }));
+  }
 
   return {
     period: range,
@@ -1531,6 +1948,7 @@ module.exports = {
   getCashierWiseSalesReport,
   getTaxSummaryReport,
   getPaymentMethodReport,
+  getCashierReconciliationReport,
   getRefundReport,
   getInventoryReport,
   getWastageReport

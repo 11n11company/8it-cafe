@@ -201,7 +201,6 @@ describe('Phase 3.3 — Company, Brand, User & Role Management Integration Tests
       await client.query('COMMIT;');
     } finally {
       client.release();
-      await pool.end();
     }
   });
 
@@ -703,7 +702,7 @@ describe('Phase 3.3 — Company, Brand, User & Role Management Integration Tests
       const adminRole = res.body.data.find(r => r.code === 'ADMIN');
       assert.ok(adminRole);
       assert.strictEqual(adminRole.isSystem, true);
-      const pre014Perms = adminRole.permissions.filter(p => p !== 'user:reset_pin');
+      const pre014Perms = adminRole.permissions.filter(p => p !== 'user:reset_pin' && !p.startsWith('tax:') && !p.startsWith('table:') && !p.startsWith('kot:') && !p.startsWith('printer'));
       assert.strictEqual(pre014Perms.length, 24, 'ADMIN must have all 24 permissions after Migration 013');
       assert.ok(adminRole.permissions.includes('user:manage_roles'));
       assert.ok(adminRole.permissions.includes('user:reset_password'));
@@ -711,7 +710,8 @@ describe('Phase 3.3 — Company, Brand, User & Role Management Integration Tests
 
       const cashierRole = res.body.data.find(r => r.code === 'CASHIER');
       assert.ok(cashierRole);
-      assert.strictEqual(cashierRole.permissions.length, 5, 'CASHIER must have 5 permissions');
+      const cashierBasePerms = cashierRole.permissions.filter(p => !p.startsWith('tax:') && !p.startsWith('table:') && !p.startsWith('kot:') && !p.startsWith('printer'));
+      assert.strictEqual(cashierBasePerms.length, 5, 'CASHIER must have 5 base permissions');
     });
 
     it('5.2 Cross-tenant boundary: User from Company A cannot read or mutate Company B brands', async () => {
@@ -915,8 +915,8 @@ describe('Phase 3.3 — Company, Brand, User & Role Management Integration Tests
           WHERE code IN ('user:manage_roles', 'user:reset_password');
         `);
 
-        // Assert exactly 22 permissions remain from Migration 012
-        const countRes = await testClient.query("SELECT count(*)::int as count FROM permissions WHERE code != 'user:reset_pin';");
+        // Assert exactly 22 permissions remain from Migration 012 (excluding subsequent tax/table/kot/printer migrations)
+        const countRes = await testClient.query("SELECT count(*)::int as count FROM permissions WHERE code != 'user:reset_pin' AND code NOT LIKE 'tax:%' AND code NOT LIKE 'table:%' AND code NOT LIKE 'kot:%' AND code NOT LIKE 'printer%';");
         assert.strictEqual(countRes.rows[0].count, 22);
 
         // Assert role:read and user:update are still intact

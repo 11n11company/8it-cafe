@@ -5,8 +5,12 @@ import { Badge } from '../common/Badge';
 import { Alert } from '../common/Alert';
 import { api } from '../../services/api';
 
-export function InventoryAdmin() {
-  const [subTab, setSubTab] = useState('overview'); // 'overview', 'items', 'adjustments', 'wastage', 'recipes', 'mappings'
+export function InventoryAdmin({ initialSubTab = 'overview' } = {}) {
+  const [subTab, setSubTab] = useState(initialSubTab);
+
+  useEffect(() => {
+    if (initialSubTab) setSubTab(initialSubTab);
+  }, [initialSubTab]);
 
   const [overview, setOverview] = useState(null);
   const [items, setItems] = useState([]);
@@ -215,23 +219,25 @@ export function InventoryAdmin() {
       {error && <Alert type="error" message={error} />}
 
       {/* Sub Tabs */}
-      <div style={{ display: 'flex', gap: '6px', borderBottom: '1px solid #334155', paddingBottom: '8px', overflowX: 'auto' }}>
+      <div className="ui-tabs" role="tablist" style={{ marginBottom: 0 }}>
         {[
-          { id: 'overview', label: '📊 Stock Overview' },
-          { id: 'items', label: '📦 Raw Materials / Items' },
-          { id: 'adjustments', label: '⚖️ Stock Adjustments' },
-          { id: 'wastage', label: '🗑️ Wastage & Spoilage' },
-          { id: 'recipes', label: '📜 Recipes (BOM)' },
-          { id: 'mappings', label: '🔗 Product Mappings' }
+          { id: 'overview', label: 'Stock Overview' },
+          { id: 'items', label: 'Raw Materials' },
+          { id: 'adjustments', label: 'Adjustments' },
+          { id: 'wastage', label: 'Wastage' },
+          { id: 'recipes', label: 'Recipes (BOM)' },
+          { id: 'mappings', label: 'Product Mappings' }
         ].map((tab) => (
-          <Button
+          <button
             key={tab.id}
-            variant={subTab === tab.id ? 'primary' : 'outline'}
-            size="sm"
+            type="button"
+            role="tab"
+            aria-selected={subTab === tab.id}
+            className={`ui-tab ${subTab === tab.id ? 'active' : ''}`}
             onClick={() => setSubTab(tab.id)}
           >
             {tab.label}
-          </Button>
+          </button>
         ))}
       </div>
 
@@ -244,7 +250,7 @@ export function InventoryAdmin() {
           <div className="stat-card-row">
             <div className="stat-card">
               <span className="stat-card-title">Total Valuation (Moving Avg)</span>
-              <span className="stat-card-val mono" style={{ color: '#10b981' }}>
+              <span className="stat-card-val mono" style={{ color: 'var(--color-success)' }}>
                 ₹{Number(overview?.totalValuation || 0).toFixed(2)}
               </span>
             </div>
@@ -256,20 +262,20 @@ export function InventoryAdmin() {
             </div>
             <div className="stat-card">
               <span className="stat-card-title">Low Stock Alert</span>
-              <span className="stat-card-val mono" style={{ color: '#f59e0b' }}>
+              <span className="stat-card-val mono" style={{ color: 'var(--color-warning)' }}>
                 {overview?.lowStockCount || 0} items
               </span>
             </div>
             <div className="stat-card">
               <span className="stat-card-title">Out of Stock Alert</span>
-              <span className="stat-card-val mono" style={{ color: '#ef4444' }}>
+              <span className="stat-card-val mono" style={{ color: 'var(--color-danger)' }}>
                 {overview?.outOfStockCount || 0} items
               </span>
             </div>
           </div>
 
           <div className="admin-toolbar">
-            <h4 style={{ color: '#f8fafc', fontSize: '1rem' }}>Stock Balances by Item & Location</h4>
+            <h4 style={{ color: 'var(--color-heading)', fontSize: '1rem' }}>Stock Balances by Item & Location</h4>
             <div style={{ display: 'flex', gap: '8px' }}>
               <Button variant="secondary" size="sm" onClick={() => {
                 setAdjForm({
@@ -315,9 +321,9 @@ export function InventoryAdmin() {
               </thead>
               <tbody>
                 {loading ? (
-                  <tr><td colSpan="8" style={{ textAlign: 'center', padding: '24px', color: '#94a3b8' }}>Loading stock balances...</td></tr>
+                  <tr><td colSpan="8" style={{ textAlign: 'center', padding: '24px', color: 'var(--color-text-muted)' }}>Loading stock balances...</td></tr>
                 ) : (overview?.balances || []).length === 0 ? (
-                  <tr><td colSpan="8" style={{ textAlign: 'center', padding: '24px', color: '#64748b' }}>No stock balances recorded.</td></tr>
+                  <tr><td colSpan="8" style={{ textAlign: 'center', padding: '24px', color: 'var(--color-text-muted)' }}>No stock balances recorded.</td></tr>
                 ) : (
                   overview.balances.map((b, idx) => (
                     <tr key={idx}>
@@ -326,11 +332,11 @@ export function InventoryAdmin() {
                       <td>{b.location_name || 'Main Kitchen'}</td>
                       <td className="text-right mono font-bold">{b.quantity_on_hand}</td>
                       <td className="text-right mono text-muted">{b.reserved_quantity || 0}</td>
-                      <td className="text-right mono font-bold" style={{ color: Number(b.quantity_on_hand) <= 0 ? '#ef4444' : '#10b981' }}>
+                      <td className="text-right mono font-bold" style={{ color: Number(b.quantity_on_hand) <= 0 ? 'var(--color-danger)' : 'var(--color-success)' }}>
                         {Number(b.quantity_on_hand) - Number(b.reserved_quantity || 0)}
                       </td>
                       <td className="text-right mono">₹{Number(b.average_cost).toFixed(2)}</td>
-                      <td className="text-right mono font-bold" style={{ color: '#10b981' }}>
+                      <td className="text-right mono font-bold" style={{ color: 'var(--color-success)' }}>
                         ₹{(Number(b.quantity_on_hand) * Number(b.average_cost)).toFixed(2)}
                       </td>
                     </tr>
@@ -349,7 +355,7 @@ export function InventoryAdmin() {
         <div>
           <div className="admin-toolbar">
             <div>
-              <h3 style={{ fontSize: '1.1rem', color: '#f8fafc' }}>Master Inventory Items</h3>
+              <h3 style={{ fontSize: '1.1rem', color: 'var(--color-heading)' }}>Master Inventory Items</h3>
               <p className="text-xs text-muted">Raw materials, ingredients, and store supplies</p>
             </div>
             <Button variant="primary" size="sm" onClick={() => {
@@ -404,12 +410,12 @@ export function InventoryAdmin() {
       {subTab === 'adjustments' && (
         <div>
           <div className="admin-toolbar">
-            <h3 style={{ fontSize: '1.1rem', color: '#f8fafc' }}>Stock Adjustments Ledger</h3>
+            <h3 style={{ fontSize: '1.1rem', color: 'var(--color-heading)' }}>Stock Adjustments Ledger</h3>
             <Button variant="primary" size="sm" onClick={() => setAdjModalOpen(true)}>
               + Record Adjustment
             </Button>
           </div>
-          <div className="admin-table-card" style={{ padding: '24px', textAlign: 'center', color: '#94a3b8' }}>
+          <div className="admin-table-card" style={{ padding: '24px', textAlign: 'center', color: 'var(--color-text-muted)' }}>
             To record stock reconciliations or corrections, click "+ Record Adjustment" above.
           </div>
         </div>
@@ -421,12 +427,12 @@ export function InventoryAdmin() {
       {subTab === 'wastage' && (
         <div>
           <div className="admin-toolbar">
-            <h3 style={{ fontSize: '1.1rem', color: '#f8fafc' }}>Wastage & Spoilage Log</h3>
+            <h3 style={{ fontSize: '1.1rem', color: 'var(--color-heading)' }}>Wastage & Spoilage Log</h3>
             <Button variant="danger" size="sm" onClick={() => setWastageModalOpen(true)}>
               + Record Wastage
             </Button>
           </div>
-          <div className="admin-table-card" style={{ padding: '24px', textAlign: 'center', color: '#94a3b8' }}>
+          <div className="admin-table-card" style={{ padding: '24px', textAlign: 'center', color: 'var(--color-text-muted)' }}>
             To log expired ingredients or kitchen preparation spills, click "+ Record Wastage" above.
           </div>
         </div>
@@ -439,7 +445,7 @@ export function InventoryAdmin() {
         <div>
           <div className="admin-toolbar">
             <div>
-              <h3 style={{ fontSize: '1.1rem', color: '#f8fafc' }}>Bill of Materials (BOM) & Recipes</h3>
+              <h3 style={{ fontSize: '1.1rem', color: 'var(--color-heading)' }}>Bill of Materials (BOM) & Recipes</h3>
               <p className="text-xs text-muted">Links POS billing items to automatic ingredient deduction upon checkout</p>
             </div>
             <Button variant="primary" size="sm" onClick={() => {
@@ -466,7 +472,7 @@ export function InventoryAdmin() {
               </thead>
               <tbody>
                 {recipes.length === 0 ? (
-                  <tr><td colSpan="4" style={{ textAlign: 'center', padding: '24px', color: '#64748b' }}>No recipes configured.</td></tr>
+                  <tr><td colSpan="4" style={{ textAlign: 'center', padding: '24px', color: 'var(--color-text-muted)' }}>No recipes configured.</td></tr>
                 ) : recipes.map((r, idx) => (
                   <tr key={idx}>
                     <td className="font-bold">{r.product_name || r.name}</td>
@@ -488,7 +494,7 @@ export function InventoryAdmin() {
         <div>
           <div className="admin-toolbar">
             <div>
-              <h3 style={{ fontSize: '1.1rem', color: '#f8fafc' }}>Retail Product to Inventory Mappings</h3>
+              <h3 style={{ fontSize: '1.1rem', color: 'var(--color-heading)' }}>Retail Product to Inventory Mappings</h3>
               <p className="text-xs text-muted">Directly maps packaged goods (e.g. bottled water, packaged brownies) to inventory items</p>
             </div>
             <Button variant="primary" size="sm" onClick={() => {
@@ -514,7 +520,7 @@ export function InventoryAdmin() {
               </thead>
               <tbody>
                 {mappings.length === 0 ? (
-                  <tr><td colSpan="3" style={{ textAlign: 'center', padding: '24px', color: '#64748b' }}>No retail product mappings.</td></tr>
+                  <tr><td colSpan="3" style={{ textAlign: 'center', padding: '24px', color: 'var(--color-text-muted)' }}>No retail product mappings.</td></tr>
                 ) : mappings.map((m, idx) => (
                   <tr key={idx}>
                     <td className="font-bold">{m.product_name}</td>

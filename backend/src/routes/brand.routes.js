@@ -178,7 +178,7 @@ function createBrandRouter(dependencies = {}) {
         const companyId = req.tenant.companyId;
         const brandId = req.params.id;
         const userId = req.user.id;
-        const { isActive } = req.body || {};
+        const isActive = req.body.isActive !== undefined ? req.body.isActive : req.body.is_active;
         const clientIp = req.ip || req.socket.remoteAddress;
         const userAgent = req.headers['user-agent'] || 'unknown';
 

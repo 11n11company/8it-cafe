@@ -11,15 +11,11 @@
 const { Client } = require('pg');
 const path = require('path');
 const crypto = require('crypto');
+const { getDatabaseConfig, getSanitizedDbInfo } = require('./db-config');
 require('dotenv').config({ path: path.join(__dirname, '..', '.env') });
 
-const config = {
-  host: process.env.DB_HOST || 'localhost',
-  port: parseInt(process.env.DB_PORT || '5432', 10),
-  database: process.env.DB_NAME || 'cafe_cloud_pos',
-  user: process.env.DB_USER || 'cafe_admin',
-  password: process.env.DB_PASSWORD || 'cafe_secure_dev_pass_2026',
-};
+const config = getDatabaseConfig(process.env);
+const sanitizedDb = getSanitizedDbInfo(config);
 
 async function runTests() {
   const client = new Client(config);
@@ -42,6 +38,7 @@ async function runTests() {
 
     console.log('\n======================================================');
     console.log(' CAFE CLOUD POS - DATABASE INTEGRITY & TEST SUITE');
+    console.log(` Target: ${sanitizedDb.host}:${sanitizedDb.port}/${sanitizedDb.database} (ssl: ${sanitizedDb.ssl})`);
     console.log('======================================================\n');
 
     // ------------------------------------------------------------------

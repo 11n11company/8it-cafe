@@ -193,11 +193,11 @@ export function UserAdmin() {
       alert('You cannot deactivate your own active session account.');
       return;
     }
-    const nextStatus = !u.is_active;
-    if (!window.confirm(`${nextStatus ? 'Activate' : 'Deactivate'} account for @${u.username}?`)) return;
+    const currentActive = u.isActive !== undefined ? Boolean(u.isActive) : Boolean(u.is_active);
+    const nextStatus = !currentActive;
     try {
       await api.users.toggleStatus(u.id, nextStatus);
-      loadData();
+      await loadData();
     } catch (err) {
       alert(err.message || 'Failed to toggle user status');
     }
@@ -209,7 +209,7 @@ export function UserAdmin() {
 
       <div className="admin-toolbar">
         <div>
-          <h3 style={{ fontSize: '1.1rem', color: '#f8fafc' }}>Staff & User Access Management</h3>
+          <h3 style={{ fontSize: '1.1rem', color: 'var(--color-heading)' }}>Staff & User Access Management</h3>
           <p className="text-xs text-muted">Manage POS cashiers, store managers, and administrators</p>
         </div>
         <Button variant="primary" size="sm" onClick={handleOpenCreate}>
@@ -231,7 +231,7 @@ export function UserAdmin() {
           </thead>
           <tbody>
             {loading ? (
-              <tr><td colSpan="6" style={{ textAlign: 'center', padding: '24px', color: '#94a3b8' }}>Loading staff users...</td></tr>
+              <tr><td colSpan="6" style={{ textAlign: 'center', padding: '24px', color: 'var(--color-text-muted)' }}>Loading staff users...</td></tr>
             ) : users.map((u) => {
               const roleCode = u.role_code || u.role?.code || 'CASHIER';
               return (
@@ -239,7 +239,7 @@ export function UserAdmin() {
                   <td className="font-bold">
                     {u.full_name}
                     {u.id === currentUser?.id && (
-                      <span style={{ fontSize: '0.7rem', color: '#3b82f6', marginLeft: '6px' }}>(You)</span>
+                      <span style={{ fontSize: '0.7rem', color: 'var(--primary)', marginLeft: '6px' }}>(You)</span>
                     )}
                   </td>
                   <td className="mono text-xs">@{u.username}</td>
@@ -247,7 +247,7 @@ export function UserAdmin() {
                   <td className="text-sm text-secondary">
                     {u.phone || '—'} {u.email ? `• ${u.email}` : ''}
                   </td>
-                  <td><Badge status={u.is_active ? 'ACTIVE' : 'INACTIVE'} /></td>
+                  <td><Badge status={(u.isActive !== undefined ? u.isActive : u.is_active) ? 'ACTIVE' : 'INACTIVE'} /></td>
                   <td style={{ textAlign: 'right' }}>
                     <div style={{ display: 'inline-flex', gap: '6px', flexWrap: 'wrap', justifyContent: 'flex-end' }}>
                       <Button variant="outline" size="sm" onClick={() => handleOpenEdit(u)}>
@@ -266,11 +266,11 @@ export function UserAdmin() {
                       )}
                       {u.id !== currentUser?.id && (
                         <Button
-                          variant={u.is_active ? 'danger' : 'success'}
+                          variant={(u.isActive !== undefined ? u.isActive : u.is_active) ? 'danger' : 'success'}
                           size="sm"
                           onClick={() => handleToggleStatus(u)}
                         >
-                          {u.is_active ? 'Disable' : 'Enable'}
+                          {(u.isActive !== undefined ? u.isActive : u.is_active) ? 'Disable' : 'Enable'}
                         </Button>
                       )}
                     </div>

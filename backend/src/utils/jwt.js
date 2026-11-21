@@ -63,10 +63,76 @@ function decodeToken(token) {
   return jwt.decode(token);
 }
 
+// ---------------------------------------------------------------------------
+// Print agent tokens
+// ---------------------------------------------------------------------------
+// Agent tokens are signed with a key DERIVED from (but different to) the user JWT
+// secret, and carry a dedicated audience + type claim. A user JWT therefore fails
+// signature verification as an agent token and vice versa, so neither can be
+// replayed against the other's endpoints even if a route forgets a type check.
+
+const AGENT_TOKEN_TYPE = 'print_agent';
+const AGENT_TOKEN_AUDIENCE = 'cafe-pos:print-agent';
+const AGENT_TOKEN_ISSUER = 'cafe-pos';
+const AGENT_JWT_SECRET = crypto
+  .createHmac('sha256', JWT_SECRET)
+  .update('cafe-pos/print-agent-token/v1')
+  .digest();
+const AGENT_TOKEN_EXPIRES_IN = config.printAgent?.tokenExpiresIn || '15m';
+
+/**
+ * Signs a short-lived print agent access token.
+ * @param {{ agentId: string, companyId: string, agentCode: string, deviceType?: string, capabilities?: string[], tokenVersion: number }} claims
+ * @param {{ expiresIn?: string|number }} [options] expiresIn override (tests only)
+ * @returns {string}
+ */
+function signAgentToken({ agentId, companyId, agentCode, deviceType, capabilities, tokenVersion }, options = {}) {
+  return jwt.sign(
+    {
+      typ: AGENT_TOKEN_TYPE,
+      companyId,
+      agentCode,
+      deviceType: deviceType || 'CASHIER_TABLET',
+      capabilities: capabilities || (deviceType === 'WAITER_TABLET' ? ['KITCHEN_KOT'] : ['KITCHEN_KOT', 'COUNTER_RECEIPT']),
+      tokenVersion
+    },
+    AGENT_JWT_SECRET,
+    {
+      algorithm: 'HS256',
+      subject: String(agentId),
+      audience: AGENT_TOKEN_AUDIENCE,
+      issuer: AGENT_TOKEN_ISSUER,
+      jwtid: crypto.randomUUID(),
+      expiresIn: options.expiresIn !== undefined ? options.expiresIn : AGENT_TOKEN_EXPIRES_IN
+    }
+  );
+}
+
+/**
+ * Verifies a print agent access token (signature, expiry, audience, issuer, type).
+ * Throws jsonwebtoken errors (TokenExpiredError / JsonWebTokenError) on failure.
+ * @param {string} token
+ * @returns {Object}
+ */
+function verifyAgentToken(token) {
+  const decoded = jwt.verify(token, AGENT_JWT_SECRET, {
+    algorithms: ['HS256'],
+    audience: AGENT_TOKEN_AUDIENCE,
+    issuer: AGENT_TOKEN_ISSUER
+  });
+  if (decoded.typ !== AGENT_TOKEN_TYPE) {
+    throw new jwt.JsonWebTokenError('Not a print agent token');
+  }
+  return decoded;
+}
+
 module.exports = {
   hashToken,
   signAccessToken,
   verifyAccessToken,
-  decodeToken
+  decodeToken,
+  signAgentToken,
+  verifyAgentToken,
+  AGENT_TOKEN_TYPE
 };
 

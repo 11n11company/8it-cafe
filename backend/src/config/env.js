@@ -6,6 +6,11 @@
 const path = require('path');
 const fs = require('fs');
 const dotenv = require('dotenv');
+const {
+  resolveDatabaseConfig,
+  getDatabaseConfig,
+  getSanitizedDbInfo
+} = require('./db-config');
 
 // Load .env from root or backend directory if present
 const rootEnvPath = path.resolve(process.cwd(), '.env');
@@ -72,42 +77,9 @@ function validateEnv(customEnv = process.env) {
     : ['http://localhost:5173'];
 
   // 4. Database configuration
-  const databaseUrl = customEnv.DATABASE_URL;
-  let dbConfig = {};
-
-  if (databaseUrl) {
-    if (!databaseUrl.startsWith('postgres://') && !databaseUrl.startsWith('postgresql://')) {
-      errors.push('DATABASE_URL must start with "postgres://" or "postgresql://"');
-    }
-    dbConfig = {
-      connectionString: databaseUrl
-    };
-  } else {
-    const host = customEnv.DB_HOST || (isProduction ? undefined : 'localhost');
-    const portRaw = customEnv.DB_PORT || (isProduction ? undefined : '5432');
-    const database = customEnv.DB_NAME || (isProduction ? undefined : 'cafe_cloud_pos');
-    const user = customEnv.DB_USER || (isProduction ? undefined : 'cafe_admin');
-    const password = customEnv.DB_PASSWORD || (isProduction ? undefined : 'cafe_secure_dev_pass_2026');
-
-    if (isProduction) {
-      if (!host) errors.push('DB_HOST is required in production when DATABASE_URL is not set.');
-      if (!database) errors.push('DB_NAME is required in production when DATABASE_URL is not set.');
-      if (!user) errors.push('DB_USER is required in production when DATABASE_URL is not set.');
-      if (!password) errors.push('DB_PASSWORD is required in production when DATABASE_URL is not set.');
-    }
-
-    const dbPort = parseInt(portRaw || '5432', 10);
-    if (isNaN(dbPort) || dbPort < 1 || dbPort > 65535) {
-      errors.push(`DB_PORT must be a valid port number. Received: "${portRaw}"`);
-    }
-
-    dbConfig = {
-      host: host || 'localhost',
-      port: isNaN(dbPort) ? 5432 : dbPort,
-      database: database || 'cafe_cloud_pos',
-      user: user || 'cafe_admin',
-      password: password || ''
-    };
+  const { dbConfig, errors: dbErrors } = resolveDatabaseConfig(customEnv, isProduction);
+  if (dbErrors && dbErrors.length > 0) {
+    errors.push(...dbErrors);
   }
 
   // 5. Connection pool options
@@ -187,6 +159,11 @@ function validateEnv(customEnv = process.env) {
       bcryptRounds,
       rateLimitWindowMs,
       rateLimitMax
+    },
+    printAgent: {
+      // Short-lived on purpose: agents renew by re-authenticating with their
+      // provisioned credential (POST /printers/agents/token).
+      tokenExpiresIn: customEnv.PRINT_AGENT_TOKEN_EXPIRES_IN || '15m'
     }
   };
 }
@@ -196,6 +173,9 @@ const config = validateEnv(process.env);
 
 module.exports = {
   config,
-  validateEnv
+  validateEnv,
+  getDatabaseConfig,
+  getSanitizedDbInfo,
+  resolveDatabaseConfig
 };
 

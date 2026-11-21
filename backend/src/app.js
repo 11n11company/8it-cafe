@@ -17,11 +17,18 @@ const { createUserRouter } = require('./routes/user.routes');
 const { createRoleRouter } = require('./routes/role.routes');
 const { createCategoryRouter } = require('./routes/category.routes');
 const { createProductRouter } = require('./routes/product.routes');
+const { createMediaRouter } = require('./routes/media.routes');
 const { createTaxRateRouter } = require('./routes/tax-rate.routes');
 const { createBillingRouter } = require('./routes/billing.routes');
 const { createWebhookRouter } = require('./routes/webhook.routes');
 const { createInventoryRouter } = require('./routes/inventory.routes');
 const { createReportsRouter } = require('./routes/reports.routes');
+const { createKotRouter } = require('./routes/kot.routes');
+const { createTableRouter } = require('./routes/table.routes');
+const { createPrinterRouter } = require('./routes/printer.routes');
+const { createAuditRouter } = require('./routes/audit.routes');
+const { createBackupRouter } = require('./routes/backup.routes');
+const { apiRateLimiter } = require('./middleware/rate-limiter');
 const path = require('path');
 const fs = require('fs');
 const notFoundHandler = require('./middleware/not-found.js');
@@ -65,7 +72,7 @@ function createApp(options = {}) {
     },
     credentials: true,
     methods: ['GET', 'HEAD', 'PUT', 'PATCH', 'POST', 'DELETE', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'X-Agent-Key', 'X-Request-Id'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'X-Request-Id'],
     ...(options.corsConfig || {})
   };
   app.use(cors(corsOptions));
@@ -91,6 +98,8 @@ function createApp(options = {}) {
   app.use(express.urlencoded({ extended: false, limit: '100kb' }));
 
   // 5. Mount API Routes under prefix /api/v1
+  app.use(config.API_PREFIX, apiRateLimiter);
+
   const healthRouter = createHealthRouter({
     dbCheck: options.dbCheck
   });
@@ -121,6 +130,9 @@ function createApp(options = {}) {
   const productRouter = createProductRouter({ dbPool: options.dbPool });
   app.use(`${config.API_PREFIX}/products`, productRouter);
 
+  // Product image uploads & serving
+  app.use(`${config.API_PREFIX}/media`, createMediaRouter({ dbPool: options.dbPool }));
+
   const taxRateRouter = createTaxRateRouter({ dbPool: options.dbPool });
   app.use(`${config.API_PREFIX}/tax-rates`, taxRateRouter);
 
@@ -132,6 +144,24 @@ function createApp(options = {}) {
 
   const reportsRouter = createReportsRouter({ dbPool: options.dbPool });
   app.use(`${config.API_PREFIX}/reports`, reportsRouter);
+
+  const kotRouter = createKotRouter({ dbPool: options.dbPool });
+  app.use(`${config.API_PREFIX}/kot`, kotRouter);
+
+  const tableRouter = createTableRouter({ dbPool: options.dbPool });
+  app.use(`${config.API_PREFIX}/tables`, tableRouter);
+
+  const printerRouter = createPrinterRouter({
+    dbPool: options.dbPool,
+    agentTokenRateLimiter: options.agentTokenRateLimiter
+  });
+  app.use(`${config.API_PREFIX}/printers`, printerRouter);
+
+  const auditRouter = createAuditRouter({ dbPool: options.dbPool });
+  app.use(`${config.API_PREFIX}/audit-logs`, auditRouter);
+
+  const backupRouter = createBackupRouter({ dbPool: options.dbPool });
+  app.use(`${config.API_PREFIX}/backups`, backupRouter);
 
   // 1. Static dashboard UI (standalone operational dashboard)
   const dashboardPublicDir = path.join(__dirname, '../../frontend/public/dashboard');
@@ -161,12 +191,39 @@ function createApp(options = {}) {
   app.use('/dashboard', express.static(dashboardDistDir));
   app.use('/dashboard', express.static(path.join(__dirname, '../../frontend')));
 
+  // 1.8 PWA Service Worker & Manifest Static Handlers
+  const publicDir = path.join(__dirname, '../../frontend/public');
+  app.get('/sw.js', (req, res, next) => {
+    const swPath = fs.existsSync(path.join(distDir, 'sw.js'))
+      ? path.join(distDir, 'sw.js')
+      : path.join(publicDir, 'sw.js');
+    if (fs.existsSync(swPath)) {
+      res.setHeader('Content-Type', 'application/javascript');
+      res.setHeader('Service-Worker-Allowed', '/');
+      res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+      return res.sendFile(swPath);
+    }
+    next();
+  });
+
+  app.get(['/manifest.webmanifest', '/manifest.json'], (req, res, next) => {
+    const manifestPath = fs.existsSync(path.join(distDir, 'manifest.webmanifest'))
+      ? path.join(distDir, 'manifest.webmanifest')
+      : path.join(publicDir, 'manifest.webmanifest');
+    if (fs.existsSync(manifestPath)) {
+      res.setHeader('Content-Type', 'application/manifest+json');
+      return res.sendFile(manifestPath);
+    }
+    next();
+  });
+
   // 2. React POS & Admin Application (built distribution)
   const distDir = path.join(__dirname, '../../frontend/dist');
   app.use(express.static(distDir));
+  app.use(express.static(publicDir));
 
   // SPA fallback for frontend client routes (non-API)
-  app.get(['/', '/pos', '/admin', '/invoices', '/reports', '/login', '/checkout'], (req, res, next) => {
+  app.get(['/', '/pos', '/admin', '/admin/dashboard', '/invoices', '/reports', '/login', '/checkout', '/waiter/tables', '/cashier/tables', '/tables'], (req, res, next) => {
     const indexPath = path.join(distDir, 'index.html');
     if (fs.existsSync(indexPath)) {
       return res.sendFile(indexPath);

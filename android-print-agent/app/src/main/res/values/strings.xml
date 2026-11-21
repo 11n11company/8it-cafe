@@ -1,0 +1,20 @@
+<resources>
+    <string name="app_name">8it Cafe Print Agent</string>
+    <string name="title_kitchen_printer">Kitchen Wi-Fi Thermal Printer</string>
+    <string name="title_cashier_printer">Cashier Wi-Fi Thermal Printer</string>
+    <string name="label_backend_url">POS Cloud Backend URL</string>
+    <string name="label_agent_code">Agent Code</string>
+    <string name="label_agent_key">Agent API Key</string>
+    <string name="label_company_id">Company ID</string>
+    <string name="label_printer_ip">Printer IP Address</string>
+    <string name="label_printer_port">TCP Port (Default 9100)</string>
+    <string name="btn_test_connection">Test Connection</string>
+    <string name="btn_test_print">Send Test Slip</string>
+    <string name="btn_start_service">Start Print Daemon</string>
+    <string name="btn_stop_service">Stop Print Daemon</string>
+    <string name="btn_save_config">Save Configuration</string>
+    <string name="status_service_running">Print Agent Active (Monitoring Queue)</string>
+    <string name="status_service_stopped">Print Agent Stopped</string>
+    <string name="notification_channel_name">Print Service Notifications</string>
+    <string name="notification_channel_desc">Shows background print daemon status and connection health</string>
+</resources>

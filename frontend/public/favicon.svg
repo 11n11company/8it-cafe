@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64">
+  <rect width="64" height="64" rx="16" fill="#063F2E"/>
+  <text x="32" y="38" font-family="'Manrope', -apple-system, sans-serif" font-size="24" font-weight="800" fill="#FFFFFF" text-anchor="middle" letter-spacing="-1">8it</text>
+  <text x="32" y="49" font-family="'Inter', -apple-system, sans-serif" font-size="8" font-weight="700" fill="#9EE2B3" text-anchor="middle" letter-spacing="2">CAFE</text>
+</svg>

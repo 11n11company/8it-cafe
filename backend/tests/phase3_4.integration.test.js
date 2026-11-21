@@ -373,7 +373,8 @@ describe('Phase 3.4 — Cashier PIN Authentication & Quick Switching Tests', () 
       assert.strictEqual(res.body.data.user.id, cashierBUser.id);
       assert.strictEqual(res.body.data.user.username, cashierBUser.username);
       assert.strictEqual(res.body.data.user.role.code, 'CASHIER');
-      assert.deepStrictEqual(res.body.data.user.permissions, [
+      const basePerms = res.body.data.user.permissions.filter(p => !p.startsWith('tax:') && !p.startsWith('table:') && !p.startsWith('kot:'));
+      assert.deepStrictEqual(basePerms, [
         'brand:read', 'order:create', 'order:read', 'order:update', 'product:read'
       ]);
 
@@ -746,6 +747,13 @@ describe('Phase 3.4 — Cashier PIN Authentication & Quick Switching Tests', () 
       assert.strictEqual(resMgr.body.error.code, 'FORBIDDEN');
 
       // Cashier denied
+      cashierAToken = signAccessToken({
+        sub: cashierAUser.id,
+        username: cashierAUser.username,
+        companyId: companyAId,
+        role: 'CASHIER',
+        tokenVersion: 1
+      });
       const resCashier = await request(app)
         .post(`/api/v1/users/${lockedCashierId}/reset-pin`)
         .set('Authorization', `Bearer ${cashierAToken}`)
@@ -814,8 +822,8 @@ describe('Phase 3.4 — Cashier PIN Authentication & Quick Switching Tests', () 
         const permCheck = await testClient.query("SELECT COUNT(*)::int AS count FROM permissions WHERE code = 'user:reset_pin';");
         assert.strictEqual(permCheck.rows[0].count, 0);
 
-        // Assert exactly 24 canonical permissions remain (Migration 012 + 013)
-        const totalPerms = await testClient.query('SELECT COUNT(*)::int AS count FROM permissions;');
+        // Assert exactly 24 canonical permissions remain (Migration 012 + 013, excluding subsequent tax/table/kot/printer migrations)
+        const totalPerms = await testClient.query("SELECT COUNT(*)::int AS count FROM permissions WHERE code NOT LIKE 'tax:%' AND code NOT LIKE 'table:%' AND code NOT LIKE 'kot:%' AND code NOT LIKE 'printer%';");
         assert.strictEqual(totalPerms.rows[0].count, 24);
 
         // Assert lockout columns no longer exist

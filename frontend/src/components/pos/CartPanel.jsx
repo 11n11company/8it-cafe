@@ -1,4 +1,97 @@
-import React from 'react';
+import React, { useState } from 'react';
+import {
+  ChefHat,
+  CreditCard,
+  FileText,
+  Minus,
+  Plus,
+  ShoppingBag,
+  ShoppingCart,
+  StickyNote,
+  Trash2,
+  UtensilsCrossed,
+  X
+} from 'lucide-react';
+import { ProductThumb } from '../common/ProductThumb';
+
+function formatAmount(value) {
+  return `₹${Number(value || 0).toFixed(2)}`;
+}
+
+function CartItemRow({ item, onUpdateQty, onRemoveItem, onUpdateItemNotes }) {
+  const [notesOpen, setNotesOpen] = useState(Boolean(item.notes));
+  const unitPrice = Number(item.product.selling_price || item.product.base_price || 0);
+  const lineTotal = unitPrice * item.quantity;
+  const showNotes = item.product.is_kitchen_item;
+
+  return (
+    <div className="pos-cart-line">
+      <ProductThumb product={item.product} className="pos-cart-thumb" />
+
+      <div className="pos-cart-line__body">
+        <div className="pos-cart-line__top">
+          <div style={{ minWidth: 0 }}>
+            <div className="pos-cart-line__name">{item.product.name}</div>
+            <div className="pos-cart-line__meta">
+              {(item.product.item_code || item.product.sku) ? `Code: ${item.product.item_code || item.product.sku}` : `${formatAmount(unitPrice)} each`}
+            </div>
+          </div>
+          <button
+            type="button"
+            className="pos-cart-line__remove"
+            onClick={() => onRemoveItem(item.product.id)}
+            title="Remove item"
+            aria-label={`Remove ${item.product.name}`}
+          >
+            <X className="ui-icon" aria-hidden="true" />
+          </button>
+        </div>
+
+        <div className="pos-cart-line__bottom">
+          <div className="pos-stepper">
+            <button
+              type="button"
+              className="pos-stepper__btn"
+              onClick={() => onUpdateQty(item.product.id, item.quantity - 1)}
+              title="Decrease quantity"
+              aria-label="Decrease quantity"
+            >
+              <Minus className="ui-icon" aria-hidden="true" />
+            </button>
+            <span className="pos-stepper__qty">{item.quantity}</span>
+            <button
+              type="button"
+              className="pos-stepper__btn"
+              onClick={() => onUpdateQty(item.product.id, item.quantity + 1)}
+              title="Increase quantity"
+              aria-label="Increase quantity"
+            >
+              <Plus className="ui-icon" aria-hidden="true" />
+            </button>
+          </div>
+          <div className="pos-cart-line__total">{formatAmount(lineTotal)}</div>
+        </div>
+
+        {/* Preparation Notes for Kitchen Items */}
+        {showNotes && (notesOpen ? (
+          <input
+            type="text"
+            className="pos-cart-line__notes"
+            placeholder="Kitchen prep notes (e.g. less sugar, pack separately)..."
+            value={item.notes || ''}
+            autoFocus={!item.notes}
+            onChange={(e) => onUpdateItemNotes && onUpdateItemNotes(item.product.id, e.target.value)}
+          />
+        ) : (
+          <button type="button" className="pos-cart-line__add-note" onClick={() => setNotesOpen(true)}>
+            <StickyNote className="ui-icon" aria-hidden="true" />
+            Add kitchen note
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
 
 export function CartPanel({
   items,
@@ -10,200 +103,222 @@ export function CartPanel({
   onClearCart,
   onOpenCheckout,
   onHoldDraft,
-  isHolding = false
+  isHolding = false,
+  activeDraftInvoiceNumber = null,
+  onDiscardDraft = null,
+  orderType = 'PARCEL',
+  onChangeOrderType = null,
+  parcelOrderNumber = '',
+  onSendParcelKot = null,
+  isSendingParcelKot = false,
+  onUpdateItemNotes = null
 }) {
   const totalItemCount = items.reduce((sum, item) => sum + item.quantity, 0);
-
-  // Detect mixed brand
-  const brandIds = new Set(items.map(i => i.product.brand_id));
-  const isMixedBrand = brandIds.size > 1;
+  const grossFallback = items.reduce(
+    (s, i) => s + (Number(i.product.selling_price || i.product.base_price || 0) * i.quantity),
+    0
+  );
+  const grandTotal = Number(calculation?.grandTotal || grossFallback);
+  const checkoutDisabled = items.length === 0 || isCalculating;
 
   return (
     <aside className="pos-cart">
+      {/* Order Type Selector */}
+      <div className="pos-order-type" role="tablist" aria-label="Order type">
+        <button
+          type="button"
+          role="tab"
+          aria-selected={orderType === 'PARCEL'}
+          className={`pos-order-type__btn ${orderType === 'PARCEL' ? 'active' : ''}`}
+          onClick={() => onChangeOrderType && onChangeOrderType('PARCEL')}
+          title="Counter takeaway and parcel orders"
+        >
+          <ShoppingBag className="ui-icon" aria-hidden="true" />
+          <span>PARCEL / TAKEAWAY</span>
+        </button>
+        <button
+          type="button"
+          role="tab"
+          aria-selected={orderType === 'DINE_IN'}
+          className={`pos-order-type__btn ${orderType === 'DINE_IN' ? 'active' : ''}`}
+          onClick={() => onChangeOrderType && onChangeOrderType('DINE_IN')}
+          title="Retrieve and settle dine-in table orders"
+        >
+          <UtensilsCrossed className="ui-icon" aria-hidden="true" />
+          <span>DINE-IN BILLING</span>
+        </button>
+      </div>
+
+      {/* Parcel Reference */}
+      {orderType === 'PARCEL' && parcelOrderNumber && (
+        <div className="pos-parcel-ref">
+          <span>Parcel Order Ref:</span>
+          <strong>{parcelOrderNumber}</strong>
+        </div>
+      )}
+
       {/* Header */}
-      <div className="cart-header">
-        <div className="cart-title-wrap">
-          <h3 style={{ fontSize: '1rem', fontWeight: 700 }}>Current Order</h3>
-          <span className="cart-item-count-badge">
-            {totalItemCount} {totalItemCount === 1 ? 'item' : 'items'}
+      <div className="pos-cart-head">
+        <div className="pos-cart-head__title">
+          <ShoppingCart className="ui-icon" aria-hidden="true" />
+          <h3>Current Order</h3>
+          <span className="pos-cart-head__count">
+            ({totalItemCount} {totalItemCount === 1 ? 'item' : 'items'})
           </span>
         </div>
-
         {items.length > 0 && (
           <button
             type="button"
+            className="pos-cart-head__clear"
             onClick={onClearCart}
-            style={{
-              background: 'transparent',
-              border: 'none',
-              color: '#ef4444',
-              fontSize: '0.8rem',
-              fontWeight: 600,
-              cursor: 'pointer'
-            }}
             title="Clear all items from cart"
           >
+            <Trash2 className="ui-icon" aria-hidden="true" />
             Clear Cart
           </button>
         )}
       </div>
 
+      {/* Resumed Draft Order Banner */}
+      {activeDraftInvoiceNumber && (
+        <div className="pos-draft-banner">
+          <span>
+            <FileText className="ui-icon" aria-hidden="true" />
+            Draft: <strong>{activeDraftInvoiceNumber}</strong>
+          </span>
+          {onDiscardDraft && (
+            <button
+              type="button"
+              onClick={onDiscardDraft}
+              title="Discard active draft reference and start fresh"
+            >
+              Start New Order
+            </button>
+          )}
+        </div>
+      )}
+
       {/* Cart Items List */}
-      <div className="cart-items-scroll">
+      <div className="cart-items-scroll pos-cart-items">
         {items.length === 0 ? (
-          <div className="cart-empty-state">
-            <div className="cart-empty-icon">🛒</div>
-            <p style={{ fontWeight: 600, color: '#f8fafc', marginBottom: '4px' }}>Cart is empty</p>
-            <p className="text-sm">Tap any product on the menu grid to start billing</p>
+          <div className="ui-state">
+            <ShoppingCart className="ui-icon" style={{ width: 36, height: 36, opacity: 0.4 }} aria-hidden="true" />
+            <div className="ui-state__title">Cart is empty</div>
+            <div>Tap any product on the menu grid to start billing</div>
           </div>
         ) : (
-          items.map((item) => {
-            const lineTotal = Number(item.product.selling_price || 0) * item.quantity;
-            return (
-              <div key={item.product.id} className="cart-item-card">
-                <div className="cart-item-header">
-                  <div className="cart-item-info">
-                    <span className="cart-item-name">{item.product.name}</span>
-                    <span className="cart-item-brand">{item.product.brand_name || 'Brand'}</span>
-                  </div>
-                  <button
-                    type="button"
-                    className="cart-item-remove-btn"
-                    onClick={() => onRemoveItem(item.product.id)}
-                    title="Remove item"
-                  >
-                    ✕
-                  </button>
-                </div>
-
-                <div className="cart-item-footer">
-                  <div className="qty-stepper">
-                    <button
-                      type="button"
-                      className="qty-btn"
-                      onClick={() => onUpdateQty(item.product.id, item.quantity - 1)}
-                      title="Decrease quantity"
-                    >
-                      −
-                    </button>
-                    <span className="qty-display">{item.quantity}</span>
-                    <button
-                      type="button"
-                      className="qty-btn"
-                      onClick={() => onUpdateQty(item.product.id, item.quantity + 1)}
-                      title="Increase quantity"
-                    >
-                      +
-                    </button>
-                  </div>
-
-                  <div className="cart-item-total">
-                    ₹{lineTotal.toFixed(2)}
-                  </div>
-                </div>
-              </div>
-            );
-          })
+          <div className="pos-cart-lines">
+            {items.map((item) => (
+              <CartItemRow
+                key={item.product.id}
+                item={item}
+                onUpdateQty={onUpdateQty}
+                onRemoveItem={onRemoveItem}
+                onUpdateItemNotes={onUpdateItemNotes}
+              />
+            ))}
+          </div>
         )}
       </div>
 
       {/* Cart Summary & Calculation Footer */}
       {items.length > 0 && (
-        <div className="cart-summary-footer">
-          {isCalculating && (
-            <div style={{ fontSize: '0.75rem', color: '#3b82f6', textAlign: 'center' }}>
-              Calculating authoritative taxes...
-            </div>
-          )}
+        <div className="pos-cart-summary">
+          {isCalculating && <div className="pos-cart-summary__status">Calculating authoritative taxes...</div>}
+          {calcError && <div className="pos-cart-summary__status is-error">{calcError}</div>}
 
-          {calcError && (
-            <div style={{ fontSize: '0.78rem', color: '#ef4444', textAlign: 'center' }}>
-              ⚠️ {calcError}
-            </div>
-          )}
-
-          {isMixedBrand && calculation?.brandBreakdown && (
-            <div style={{ padding: '6px 0', borderBottom: '1px dashed #334155' }}>
-              <span className="brand-split-badge">
-                Multi-Brand Order ({Object.keys(calculation.brandBreakdown).length} Brands)
-              </span>
-              <div style={{ marginTop: '4px', display: 'flex', flexDirection: 'column', gap: '2px' }}>
-                {Object.entries(calculation.brandBreakdown).map(([brandName, bData]) => (
-                  <div key={brandName} style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.75rem', color: '#94a3b8' }}>
-                    <span>{brandName}:</span>
-                    <span className="mono">₹{Number(bData.total || 0).toFixed(2)}</span>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-
-          <div className="cart-breakdown-row">
+          <div className="pos-sum-row">
             <span>Subtotal (Gross)</span>
-            <span className="mono">
-              ₹{Number(calculation?.subtotalGross || items.reduce((s, i) => s + (Number(i.product.selling_price) * i.quantity), 0)).toFixed(2)}
-            </span>
+            <span>{formatAmount(calculation?.subtotalGross || grossFallback)}</span>
           </div>
 
           {Number(calculation?.totalDiscountAmount || 0) > 0 && (
-            <div className="cart-breakdown-row" style={{ color: '#ef4444' }}>
+            <div className="pos-sum-row is-discount">
               <span>Discount</span>
-              <span className="mono">−₹{Number(calculation.totalDiscountAmount).toFixed(2)}</span>
+              <span>−{formatAmount(calculation.totalDiscountAmount)}</span>
             </div>
           )}
 
-          <div className="cart-breakdown-row">
+          <div className="pos-sum-row">
             <span>Taxable Amount</span>
-            <span className="mono">₹{Number(calculation?.totalTaxableAmount || 0).toFixed(2)}</span>
+            <span>{formatAmount(calculation?.totalTaxableAmount)}</span>
           </div>
 
-          <div className="cart-breakdown-row">
-            <span>Taxes (CGST + SGST)</span>
-            <span className="mono">
-              ₹{(Number(calculation?.totalCgstAmount || 0) + Number(calculation?.totalSgstAmount || 0) + Number(calculation?.totalCessAmount || 0)).toFixed(2)}
-            </span>
-          </div>
-
+          {/* GST Breakdown (Server-Authoritative) */}
+          {Number(calculation?.totalCgstAmount || 0) > 0 && (
+            <div className="pos-sum-row">
+              <span>CGST</span>
+              <span>{formatAmount(calculation.totalCgstAmount)}</span>
+            </div>
+          )}
+          {Number(calculation?.totalSgstAmount || 0) > 0 && (
+            <div className="pos-sum-row">
+              <span>SGST</span>
+              <span>{formatAmount(calculation.totalSgstAmount)}</span>
+            </div>
+          )}
+          {Number(calculation?.totalIgstAmount || 0) > 0 && (
+            <div className="pos-sum-row">
+              <span>IGST</span>
+              <span>{formatAmount(calculation.totalIgstAmount)}</span>
+            </div>
+          )}
+          {Number(calculation?.totalCessAmount || 0) > 0 && (
+            <div className="pos-sum-row">
+              <span>GST Cess</span>
+              <span>{formatAmount(calculation.totalCessAmount)}</span>
+            </div>
+          )}
           {Number(calculation?.roundingAdjustment || 0) !== 0 && (
-            <div className="cart-breakdown-row text-xs text-muted">
+            <div className="pos-sum-row">
               <span>Rounding Adj.</span>
-              <span className="mono">
-                {Number(calculation.roundingAdjustment) > 0 ? '+' : ''}₹{Number(calculation.roundingAdjustment).toFixed(2)}
+              <span>
+                {Number(calculation.roundingAdjustment) > 0 ? '+' : ''}
+                {formatAmount(calculation.roundingAdjustment)}
               </span>
             </div>
           )}
 
-          <div className="cart-breakdown-row grand-total">
+          {/* Grand Total */}
+          <div className="pos-grand-total">
             <span>Grand Total</span>
-            <span className="amount mono">
-              ₹{Number(calculation?.grandTotal || items.reduce((s, i) => s + (Number(i.product.selling_price) * i.quantity), 0)).toFixed(2)}
-            </span>
+            <span>{formatAmount(grandTotal)}</span>
           </div>
 
-          {/* Action Buttons */}
-          <div className="cart-actions">
+          {/* Actions */}
+          {orderType === 'PARCEL' && (
             <button
               type="button"
-              className="btn-hold"
+              className="pos-action pos-action--subtle"
+              onClick={onSendParcelKot}
+              disabled={isSendingParcelKot || items.length === 0}
+              title="Send PARCEL KOT to kitchen printer"
+            >
+              <ChefHat className="ui-icon" aria-hidden="true" />
+              {isSendingParcelKot ? 'Sending...' : 'Send Parcel KOT'}
+            </button>
+          )}
+
+          <div className="pos-actions">
+            <button
+              type="button"
+              className="pos-action pos-action--secondary btn-hold"
               onClick={onHoldDraft}
               disabled={isHolding || items.length === 0}
-              title="Save draft invoice to work on later"
+              title="Save the current order as a draft"
             >
-              {isHolding ? 'Saving...' : '💾 Draft'}
+              <FileText className="ui-icon" aria-hidden="true" />
+              {isHolding ? 'Saving...' : 'Save Order'}
             </button>
-
             <button
               type="button"
-              className="btn-checkout"
+              className="pos-action pos-action--primary btn-checkout"
               onClick={onOpenCheckout}
-              disabled={items.length === 0 || isCalculating}
-              title="Open checkout and collect payment"
+              disabled={checkoutDisabled}
+              title={`Proceed to payment (${formatAmount(grandTotal)})`}
             >
-              <span>Pay</span>
-              <span className="mono">
-                ₹{Number(calculation?.grandTotal || items.reduce((s, i) => s + (Number(i.product.selling_price) * i.quantity), 0)).toFixed(2)}
-              </span>
-              <span>→</span>
+              <CreditCard className="ui-icon" aria-hidden="true" />
+              Proceed to Payment
             </button>
           </div>
         </div>

@@ -55,6 +55,7 @@ describe('Phase 3.6 — Tax & GST Management Integration Tests', () => {
     const url = `${baseUrl}${endpoint}`;
     const headers = {
       'Content-Type': 'application/json',
+      'Connection': 'close',
       ...(options.headers || {}),
     };
 
@@ -89,24 +90,6 @@ describe('Phase 3.6 — Tax & GST Management Integration Tests', () => {
       await pool.query('DELETE FROM brands WHERE company_id = ANY($1::uuid[]);', [ids]);
       await pool.query('DELETE FROM companies WHERE id = ANY($1::uuid[]);', [ids]);
     }
-
-    // Clean up Phase 3.6 test permissions if inserted during testing
-    await pool.query(`
-      DELETE FROM role_permissions
-      WHERE permission_id IN (
-        '00000000-0000-0000-0000-000000000021',
-        '00000000-0000-0000-0000-000000000022',
-        '00000000-0000-0000-0000-000000000023'
-      );
-    `);
-    await pool.query(`
-      DELETE FROM permissions
-      WHERE id IN (
-        '00000000-0000-0000-0000-000000000021',
-        '00000000-0000-0000-0000-000000000022',
-        '00000000-0000-0000-0000-000000000023'
-      );
-    `);
   }
 
   before(async () => {
@@ -323,10 +306,10 @@ describe('Phase 3.6 — Tax & GST Management Integration Tests', () => {
 
   after(async () => {
     if (server) {
+      if (typeof server.closeAllConnections === "function") server.closeAllConnections();
       await new Promise((resolve) => server.close(resolve));
     }
     await cleanupTestData();
-    await pool.end();
   });
 
   // ==========================================================================

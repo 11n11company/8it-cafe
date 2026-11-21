@@ -12,11 +12,14 @@ function mapBrandRowToDto(row) {
   return {
     id: row.id,
     companyId: row.company_id,
+    company_id: row.company_id,
     name: row.name,
     code: row.code,
     description: row.description,
     displayOrder: row.display_order,
+    display_order: row.display_order,
     isActive: row.is_active,
+    is_active: row.is_active,
     createdAt: row.created_at,
     updatedAt: row.updated_at
   };

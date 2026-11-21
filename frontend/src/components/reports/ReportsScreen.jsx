@@ -3,14 +3,26 @@ import { Button } from '../common/Button';
 import { Alert } from '../common/Alert';
 import { api } from '../../services/api';
 
-export function ReportsScreen() {
+export function ReportsScreen({ brandId: initialBrandId = '', onBrandChange = null }) {
   const [datePreset, setDatePreset] = useState('today');
-  const [brandId, setBrandId] = useState('');
+  const [brandId, setBrandId] = useState(initialBrandId);
   const [brands, setBrands] = useState([]);
 
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+
+  // Sync external brandId if passed as prop
+  useEffect(() => {
+    if (initialBrandId !== undefined) {
+      setBrandId(initialBrandId);
+    }
+  }, [initialBrandId]);
+
+  const handleBrandSelect = (bId) => {
+    setBrandId(bId);
+    if (onBrandChange) onBrandChange(bId);
+  };
 
   // Load Brands
   useEffect(() => {
@@ -38,23 +50,32 @@ export function ReportsScreen() {
 
   useEffect(() => {
     loadReports();
+    const interval = setInterval(loadReports, 6000);
+    const handleSaleCompleted = () => {
+      loadReports();
+    };
+    window.addEventListener('sale_completed', handleSaleCompleted);
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener('sale_completed', handleSaleCompleted);
+    };
   }, [loadReports]);
 
   // Render SVG polyline for hourly trend
   const renderHourlyChart = () => {
-    const hourly = data?.hourlyTrend || [];
+    const hourly = data?.hourlySales || [];
     if (hourly.length === 0) {
       return <div className="text-muted text-center" style={{ padding: '24px' }}>No hourly data available</div>;
     }
 
-    const maxSales = Math.max(...hourly.map(h => Number(h.sales || h.net_sales || 0)), 100);
+    const maxSales = Math.max(...hourly.map(h => Number(h.sales || 0)), 100);
     const width = 600;
     const height = 140;
     const padding = 20;
 
     const points = hourly.map((h, i) => {
-      const x = padding + (i / (hourly.length - 1)) * (width - 2 * padding);
-      const val = Number(h.sales || h.net_sales || 0);
+      const x = padding + (i / Math.max(1, (hourly.length - 1))) * (width - 2 * padding);
+      const val = Number(h.sales || 0);
       const y = height - padding - (val / maxSales) * (height - 2 * padding);
       return `${x},${y}`;
     }).join(' ');
@@ -63,25 +84,27 @@ export function ReportsScreen() {
       <svg viewBox={`0 0 ${width} ${height}`} style={{ width: '100%', height: '140px', overflow: 'visible' }}>
         <defs>
           <linearGradient id="chartGrad" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%" stopColor="#3b82f6" stopOpacity="0.4" />
-            <stop offset="100%" stopColor="#3b82f6" stopOpacity="0.0" />
+            <stop offset="0%" stopColor="#174D38" stopOpacity="0.35" />
+            <stop offset="100%" stopColor="#174D38" stopOpacity="0.0" />
           </linearGradient>
         </defs>
         <polyline
           fill="none"
-          stroke="#3b82f6"
+          stroke="var(--color-heading)"
           strokeWidth="3"
           strokeLinecap="round"
           strokeLinejoin="round"
           points={points}
         />
         {hourly.map((h, i) => {
-          const x = padding + (i / (hourly.length - 1)) * (width - 2 * padding);
-          const val = Number(h.sales || h.net_sales || 0);
+          const x = padding + (i / Math.max(1, (hourly.length - 1))) * (width - 2 * padding);
+          const val = Number(h.sales || 0);
           const y = height - padding - (val / maxSales) * (height - 2 * padding);
           if (val > 0) {
             return (
-              <circle key={i} cx={x} cy={y} r="4" fill="#60a5fa" stroke="#0f172a" strokeWidth="2" />
+              <circle key={i} cx={x} cy={y} r="4" fill="#28664A" stroke="#FFFDF9" strokeWidth="2">
+                <title>{`${h.label}: ₹${val.toFixed(2)} (${h.invoiceCount} bills)`}</title>
+              </circle>
             );
           }
           return null;
@@ -90,35 +113,94 @@ export function ReportsScreen() {
     );
   };
 
-  const kpis = data?.kpis || {};
+  const summary = data?.summary || {};
+  const payments = data?.payments || {};
+  const refunds = data?.refunds || {};
   const brandsPerf = data?.brandPerformance || [];
-  const topProducts = data?.topProducts || [];
+  const topProducts = data?.topSellingProducts || [];
+  const categorySales = data?.categorySales || [];
+  const taxBreakdown = data?.taxBreakdown || [];
+  const inventory = data?.inventory || {};
+  const wastage = data?.wastage || {};
+  const orderTypeBreakdown = data?.orderTypeBreakdown || {
+    dineIn: { netSales: '0.00', invoiceCount: 0, taxableAmount: '0.00', totalTax: '0.00' },
+    parcel: { netSales: '0.00', invoiceCount: 0, taxableAmount: '0.00', totalTax: '0.00' }
+  };
+
+  const activeBrandName = brandId 
+    ? (brands.find(b => b.id === brandId)?.name || data?.brand?.name || 'Selected Brand')
+    : 'Consolidated (All Brands)';
 
   return (
     <div style={{ flex: 1, overflowY: 'auto', padding: '20px', display: 'flex', flexDirection: 'column', gap: '20px' }}>
-      {/* Top Filter Bar */}
-      <div className="admin-toolbar" style={{ flexWrap: 'wrap' }}>
+      {/* Top Filter Bar & Brand Switcher */}
+      <div className="admin-toolbar" style={{ flexWrap: 'wrap', gap: '12px' }}>
         <div>
-          <h2 style={{ fontSize: '1.4rem', color: '#f8fafc' }}>Business Analytics & Executive Reports</h2>
-          <p className="text-xs text-muted">Authoritative sales aggregations, brand performance, and inventory health</p>
+          <h2 style={{ fontSize: '1.4rem', color: 'var(--color-heading)', margin: 0 }}>
+            {brandId ? `${activeBrandName} Sales Report` : 'Consolidated Business Reports'}
+          </h2>
+          <p className="text-xs text-muted" style={{ margin: '4px 0 0 0' }}>
+            {brandId 
+              ? `Filtered to immutable line-item snapshot attribution for ${activeBrandName}`
+              : 'Combined performance across 8itcafe and Seri\'s Hub without double-counting'}
+          </p>
         </div>
 
-        <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
-          <select
-            className="form-control"
-            value={brandId}
-            onChange={(e) => setBrandId(e.target.value)}
-            style={{ width: '180px' }}
+        {/* Brand Filter Pills */}
+        <div style={{ display: 'inline-flex', background: 'var(--bg-surface-elevated)', borderRadius: '8px', padding: '3px', border: '1px solid var(--border-default)' }}>
+          <button
+            type="button"
+            className={`btn-sm ${!brandId ? 'active font-bold' : ''}`}
+            onClick={() => handleBrandSelect('')}
+            style={{
+              border: 'none',
+              background: !brandId ? 'var(--color-primary)' : 'transparent',
+              color: !brandId ? 'var(--color-on-primary)' : 'var(--text-secondary)',
+              borderRadius: '6px',
+              padding: '6px 14px',
+              cursor: 'pointer',
+              fontSize: '0.82rem',
+              fontWeight: 600,
+              transition: 'all 0.15s'
+            }}
           >
-            <option value="">Consolidated (All Brands)</option>
-            {brands.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
-          </select>
+            🏪 Consolidated
+          </button>
+          {brands.map(b => {
+            const isSelected = brandId === b.id;
+            const isSeris = String(b.name).toLowerCase().includes('seri');
+            const activeBg = isSeris ? 'var(--color-accent)' : 'var(--color-primary)';
+            return (
+              <button
+                key={b.id}
+                type="button"
+                className={`btn-sm ${isSelected ? 'active font-bold' : ''}`}
+                onClick={() => handleBrandSelect(b.id)}
+                style={{
+                  border: 'none',
+                  background: isSelected ? activeBg : 'transparent',
+                  color: isSelected ? 'var(--color-on-primary)' : 'var(--text-secondary)',
+                  borderRadius: '6px',
+                  padding: '6px 14px',
+                  cursor: 'pointer',
+                  fontSize: '0.82rem',
+                  fontWeight: 600,
+                  transition: 'all 0.15s'
+                }}
+              >
+                {b.name}
+              </button>
+            );
+          })}
+        </div>
 
+        {/* Date Preset Selector */}
+        <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
           <select
             className="form-control"
             value={datePreset}
             onChange={(e) => setDatePreset(e.target.value)}
-            style={{ width: '170px' }}
+            style={{ width: '180px', height: '36px' }}
           >
             <option value="today">Today</option>
             <option value="yesterday">Yesterday</option>
@@ -129,7 +211,7 @@ export function ReportsScreen() {
             <option value="this_financial_year">Financial Year (FY)</option>
           </select>
 
-          <Button variant="outline" size="sm" onClick={loadReports}>
+          <Button variant="outline" size="sm" onClick={loadReports} loading={loading}>
             ↻ Refresh
           </Button>
 
@@ -146,15 +228,15 @@ export function ReportsScreen() {
               padding: '0 12px',
               height: '36px',
               borderRadius: '6px',
-              background: '#1e293b',
-              color: '#f8fafc',
-              border: '1px solid #334155',
+              background: 'var(--bg-surface-elevated)',
+              color: 'var(--text-primary)',
+              border: '1px solid var(--border-default)',
               fontSize: '0.82rem',
               fontWeight: 600
             }}
           >
             <span>↗</span>
-            <span>Standalone View</span>
+            <span>Dashboard Hub</span>
           </a>
         </div>
       </div>
@@ -163,136 +245,325 @@ export function ReportsScreen() {
 
       {/* KPI Cards Grid */}
       <div className="stat-card-row">
-        <div className="stat-card" style={{ borderLeft: '4px solid #3b82f6' }}>
+        {/* 1. Net Sales Turnover */}
+        <div className="stat-card" style={{ borderLeft: '4px solid var(--color-primary)' }}>
           <span className="stat-card-title">Net Sales Turnover</span>
-          <span className="stat-card-val mono" style={{ color: '#3b82f6' }}>
-            ₹{Number(kpis.netSales || 0).toFixed(2)}
+          <span className="stat-card-val mono" style={{ color: 'var(--color-heading)' }}>
+            ₹{Number(summary.netSales || 0).toFixed(2)}
           </span>
           <span className="text-xs text-muted" style={{ marginTop: '4px' }}>
-            Gross: ₹{Number(kpis.grossSales || 0).toFixed(2)} | Disc: ₹{Number(kpis.totalDiscounts || 0).toFixed(2)}
+            Gross: ₹{Number(summary.grossSales || 0).toFixed(2)} | Disc: ₹{Number(summary.totalDiscounts || 0).toFixed(2)}
           </span>
         </div>
 
-        <div className="stat-card" style={{ borderLeft: '4px solid #06b6d4' }}>
-          <span className="stat-card-title">Completed Bills & AOV</span>
-          <span className="stat-card-val mono">
-            {kpis.invoiceCount || 0} bills
+        {/* 2. Items Sold */}
+        <div className="stat-card" style={{ borderLeft: '4px solid var(--color-primary)' }}>
+          <span className="stat-card-title">Products Sold</span>
+          <span className="stat-card-val mono" style={{ color: 'var(--color-primary)' }}>
+            {summary.itemsSold || 0} items
           </span>
           <span className="text-xs text-muted" style={{ marginTop: '4px' }}>
-            Avg Ticket: ₹{Number(kpis.averageOrderValue || 0).toFixed(2)}
+            Units served across {summary.invoiceCount || 0} {summary.invoiceCountLabel || 'bills'}
           </span>
         </div>
 
-        <div className="stat-card" style={{ borderLeft: '4px solid #10b981' }}>
+        {/* 3. Invoices Count & AOV */}
+        <div className="stat-card" style={{ borderLeft: '4px solid var(--color-info)' }}>
+          <span className="stat-card-title">{brandId ? 'Invoices with Brand Items' : 'Completed Invoices'}</span>
+          <span className="stat-card-val mono" style={{ color: 'var(--color-info)' }}>
+            {summary.invoiceCount || 0} bills
+          </span>
+          <span className="text-xs text-muted" style={{ marginTop: '4px' }}>
+            Avg Ticket: ₹{Number(summary.averageInvoiceValue || 0).toFixed(2)}
+          </span>
+        </div>
+
+        {/* 4. Tax Allocation (CGST + SGST + Cess) */}
+        <div className="stat-card" style={{ borderLeft: '4px solid var(--color-accent)' }}>
+          <span className="stat-card-title">Statutory Taxes</span>
+          <span className="stat-card-val mono" style={{ color: 'var(--color-accent)' }}>
+            ₹{Number(summary.totalTax || 0).toFixed(2)}
+          </span>
+          <span className="text-xs text-muted" style={{ marginTop: '4px' }}>
+            CGST: ₹{Number(summary.cgst || 0).toFixed(2)} | SGST: ₹{Number(summary.sgst || 0).toFixed(2)}
+          </span>
+        </div>
+
+        {/* 5. Payments Collected */}
+        <div className="stat-card" style={{ borderLeft: '4px solid var(--color-success)' }}>
           <span className="stat-card-title">Payments Collected</span>
-          <span className="stat-card-val mono" style={{ color: '#10b981' }}>
-            ₹{Number(kpis.paymentsTotal || 0).toFixed(2)}
+          <span className="stat-card-val mono" style={{ color: 'var(--color-success)' }}>
+            ₹{Number(payments.totalSuccessfulAmount || 0).toFixed(2)}
           </span>
           <span className="text-xs text-muted" style={{ marginTop: '4px' }}>
-            Cash, UPI & Card settlements
+            {payments.totalSuccessfulCount || 0} successful transactions
           </span>
         </div>
 
-        <div className="stat-card" style={{ borderLeft: '4px solid #f59e0b' }}>
-          <span className="stat-card-title">Refunds & Returns</span>
-          <span className="stat-card-val mono" style={{ color: '#f59e0b' }}>
-            ₹{Number(kpis.refundsTotal || 0).toFixed(2)}
+        {/* 6. Refunds & Returns */}
+        <div className="stat-card" style={{ borderLeft: '4px solid var(--color-warning)' }}>
+          <span className="stat-card-title">{brandId ? 'Proportional Refunds' : 'Total Refunds'}</span>
+          <span className="stat-card-val mono" style={{ color: 'var(--color-warning)' }}>
+            ₹{Number(refunds.amount || 0).toFixed(2)}
           </span>
           <span className="text-xs text-muted" style={{ marginTop: '4px' }}>
-            {kpis.pendingInvoicesCount || 0} Pending Drafts
-          </span>
-        </div>
-
-        <div className="stat-card" style={{ borderLeft: '4px solid #a855f7' }}>
-          <span className="stat-card-title">Inventory Valuation</span>
-          <span className="stat-card-val mono" style={{ color: '#a855f7' }}>
-            ₹{Number(kpis.inventoryValuation || 0).toFixed(2)}
-          </span>
-          <span className="text-xs text-muted" style={{ marginTop: '4px' }}>
-            {kpis.lowStockCount || 0} Low | {kpis.outOfStockCount || 0} Out of Stock
-          </span>
-        </div>
-
-        <div className="stat-card" style={{ borderLeft: '4px solid #ef4444' }}>
-          <span className="stat-card-title">Wastage Losses</span>
-          <span className="stat-card-val mono" style={{ color: '#ef4444' }}>
-            ₹{Number(kpis.wastageLoss || 0).toFixed(2)}
-          </span>
-          <span className="text-xs text-muted" style={{ marginTop: '4px' }}>
-            {kpis.wastageQuantity || 0} units written off
+            {refunds.count || 0} vouchers processed
           </span>
         </div>
       </div>
 
-      {/* Charts & Visual Segregation */}
+      {/* Dine-In vs Parcel Order Workflows Breakdown */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '16px', marginBottom: '20px' }}>
+        <div className="stat-card" style={{ borderLeft: '4px solid var(--color-info)', backgroundColor: 'var(--bg-surface)' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <span className="stat-card-title" style={{ color: 'var(--color-info)', fontWeight: 700 }}>🍽️ Dine-In Sales (Waiter Tables)</span>
+            <span style={{ fontSize: '0.75rem', fontWeight: 700, padding: '2px 8px', borderRadius: '10px', background: 'rgba(13, 148, 136, 0.12)', color: 'var(--color-info)' }}>
+              {orderTypeBreakdown?.dineIn?.invoiceCount || 0} orders
+            </span>
+          </div>
+          <span className="stat-card-val mono" style={{ color: 'var(--color-info)', marginTop: '6px' }}>
+            ₹{Number(orderTypeBreakdown?.dineIn?.netSales || 0).toFixed(2)}
+          </span>
+          <span className="text-xs text-muted" style={{ marginTop: '4px' }}>
+            Taxable: ₹{Number(orderTypeBreakdown?.dineIn?.taxableAmount || 0).toFixed(2)} | GST: ₹{Number(orderTypeBreakdown?.dineIn?.totalTax || 0).toFixed(2)}
+          </span>
+        </div>
+
+        <div className="stat-card" style={{ borderLeft: '4px solid var(--color-warning)', backgroundColor: 'var(--bg-surface)' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <span className="stat-card-title" style={{ color: 'var(--color-warning)', fontWeight: 700 }}>🛍️ Parcel / Takeaway Sales (Cashier Counter)</span>
+            <span style={{ fontSize: '0.75rem', fontWeight: 700, padding: '2px 8px', borderRadius: '10px', background: 'rgba(234, 88, 12, 0.12)', color: 'var(--color-warning)' }}>
+              {orderTypeBreakdown?.parcel?.invoiceCount || 0} orders
+            </span>
+          </div>
+          <span className="stat-card-val mono" style={{ color: 'var(--color-warning)', marginTop: '6px' }}>
+            ₹{Number(orderTypeBreakdown?.parcel?.netSales || 0).toFixed(2)}
+          </span>
+          <span className="text-xs text-muted" style={{ marginTop: '4px' }}>
+            Taxable: ₹{Number(orderTypeBreakdown?.parcel?.taxableAmount || 0).toFixed(2)} | GST: ₹{Number(orderTypeBreakdown?.parcel?.totalTax || 0).toFixed(2)}
+          </span>
+        </div>
+      </div>
+
+      {/* Visual Analytics Grid: Hourly Velocity + Multi-Brand Revenue Share */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(350px, 1fr))', gap: '20px' }}>
         {/* Hourly Velocity */}
         <div className="admin-table-card" style={{ padding: '20px' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px' }}>
-            <h4 style={{ color: '#f8fafc', fontSize: '1rem' }}>Hourly Sales Velocity (IST)</h4>
-            <span className="text-xs text-muted">24-Hour Velocity Curve</span>
+            <h4 style={{ color: 'var(--text-primary)', fontSize: '1rem', margin: 0 }}>Hourly Sales Velocity (IST)</h4>
+            <span className="text-xs text-muted">24-Hour Curve</span>
           </div>
           {renderHourlyChart()}
         </div>
 
-        {/* Brand Performance Share */}
-        <div className="admin-table-card" style={{ padding: '20px' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px' }}>
-            <h4 style={{ color: '#f8fafc', fontSize: '1rem' }}>Multi-Brand Revenue Segregation</h4>
-            <span className="text-xs text-muted">Line-Item Attribution</span>
+        {/* Brand Performance Share (Visible on Consolidated View) */}
+        {!brandId && (
+          <div className="admin-table-card" style={{ padding: '20px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px' }}>
+              <h4 style={{ color: 'var(--text-primary)', fontSize: '1rem', margin: 0 }}>Multi-Brand Revenue Segregation</h4>
+              <span className="text-xs text-muted">No Double Counting</span>
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+              {brandsPerf.length === 0 ? (
+                <p className="text-muted text-center" style={{ padding: '20px' }}>No brand sales recorded</p>
+              ) : (
+                (() => {
+                  const totalCompanySales = brandsPerf.reduce((acc, bp) => acc + Number(bp.netSales || bp.net_sales || 0), 0);
+                  return brandsPerf.map((bp, idx) => {
+                    const brandSales = Number(bp.netSales || bp.net_sales || 0);
+                    const pct = totalCompanySales > 0 ? ((brandSales / totalCompanySales) * 100).toFixed(1) : '0.0';
+                    const isSeris = String(bp.brandName || bp.brand_name).toLowerCase().includes('seri');
+                    const brandColor = isSeris ? 'var(--color-accent)' : 'var(--color-primary)';
+
+                    return (
+                      <div key={bp.brandId || idx} style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.85rem' }}>
+                          <span className="font-bold">
+                            {bp.brandName || bp.brand_name} ({bp.brandCode || bp.brand_code})
+                          </span>
+                          <span className="mono font-bold" style={{ color: brandColor }}>
+                            ₹{brandSales.toFixed(2)} ({pct}%) • {bp.itemsSold || 0} items
+                          </span>
+                        </div>
+                        <div style={{ width: '100%', height: '10px', background: 'var(--bg-surface-elevated)', borderRadius: '5px', overflow: 'hidden' }}>
+                          <div
+                            style={{
+                              height: '100%',
+                              width: `${Math.min(100, Number(pct))}%`,
+                              background: brandColor,
+                              borderRadius: '5px',
+                              transition: 'width 0.3s ease-in-out'
+                            }}
+                          />
+                        </div>
+                      </div>
+                    );
+                  });
+                })()
+              )}
+            </div>
           </div>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-            {brandsPerf.length === 0 ? (
-              <p className="text-muted text-center" style={{ padding: '20px' }}>No brand sales recorded</p>
-            ) : brandsPerf.map((bp, idx) => (
-              <div key={idx} style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.85rem' }}>
-                  <span className="font-bold">{bp.brand_name || bp.name}</span>
-                  <span className="mono font-bold" style={{ color: '#10b981' }}>
-                    ₹{Number(bp.net_sales || bp.sales || 0).toFixed(2)} ({Number(bp.percentage || bp.share || 0).toFixed(1)}%)
-                  </span>
-                </div>
-                <div style={{ width: '100%', height: '8px', background: '#1e293b', borderRadius: '4px', overflow: 'hidden' }}>
-                  <div
-                    style={{
-                      height: '100%',
-                      width: `${Math.min(100, Number(bp.percentage || bp.share || 0))}%`,
-                      background: idx % 2 === 0 ? '#3b82f6' : '#f59e0b',
-                      borderRadius: '4px'
-                    }}
-                  />
-                </div>
+        )}
+
+        {/* If filtered by brand: Quick Inventory / Wastage Snapshot */}
+        {brandId && (
+          <div className="admin-table-card" style={{ padding: '20px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px' }}>
+              <h4 style={{ color: 'var(--text-primary)', fontSize: '1rem', margin: 0 }}>Operational Health</h4>
+              <span className="text-xs text-muted">Stock & Adjustments</span>
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+              <div style={{ padding: '12px', background: 'var(--bg-surface-elevated)', borderRadius: '8px' }}>
+                <span className="text-xs text-muted">Inventory Valuation</span>
+                <p className="mono font-bold" style={{ fontSize: '1.2rem', color: 'var(--color-heading)', margin: '4px 0 0 0' }}>
+                  ₹{Number(inventory.valuation || 0).toFixed(2)}
+                </p>
+                <span className="text-xs text-muted">{inventory.lowStockCount || 0} low stock items</span>
               </div>
-            ))}
+              <div style={{ padding: '12px', background: 'var(--bg-surface-elevated)', borderRadius: '8px' }}>
+                <span className="text-xs text-muted">Wastage / Expiry Loss</span>
+                <p className="mono font-bold" style={{ fontSize: '1.2rem', color: 'var(--color-danger)', margin: '4px 0 0 0' }}>
+                  ₹{Number(wastage.lossAmount || 0).toFixed(2)}
+                </p>
+                <span className="text-xs text-muted">{Number(wastage.wastedQuantity || 0).toFixed(1)} units written off</span>
+              </div>
+            </div>
           </div>
-        </div>
+        )}
       </div>
 
       {/* Top Products Table */}
       <div className="admin-table-card">
-        <div style={{ padding: '16px 20px', borderBottom: '1px solid #334155', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <h4 style={{ color: '#f8fafc', fontSize: '1rem', margin: 0 }}>Top Selling Products</h4>
-          <span className="text-xs text-muted">Ranked by Volume & Turnover</span>
+        <div style={{ padding: '16px 20px', borderBottom: '1px solid var(--border-default)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <div>
+            <h4 style={{ color: 'var(--text-primary)', fontSize: '1rem', margin: 0 }}>
+              Top Selling Products {brandId ? `for ${activeBrandName}` : ''}
+            </h4>
+            <span className="text-xs text-muted">Ranked by units sold and revenue</span>
+          </div>
+          <span className="badge badge-success">{topProducts.length} items</span>
         </div>
         <table className="admin-table">
           <thead>
             <tr>
+              <th>#</th>
               <th>Product Name</th>
+              <th>ITEM CODE</th>
               <th>Brand</th>
-              <th className="text-right">Quantity Sold</th>
+              <th className="text-right">Units Sold</th>
               <th className="text-right">Net Revenue</th>
             </tr>
           </thead>
           <tbody>
             {topProducts.length === 0 ? (
-              <tr><td colSpan="4" style={{ textAlign: 'center', padding: '20px', color: '#64748b' }}>No product sales recorded for this period.</td></tr>
-            ) : topProducts.map((tp, idx) => (
+              <tr><td colSpan="6" style={{ textAlign: 'center', padding: '24px', color: 'var(--text-muted)' }}>No product sales recorded for this period.</td></tr>
+            ) : topProducts.map((tp, idx) => {
+              const isSeris = String(tp.brandName).toLowerCase().includes('seri');
+              const bClass = isSeris ? 'brand-seris' : 'brand-8it';
+              return (
+                <tr key={tp.productId || idx}>
+                  <td className="mono text-muted text-xs">{idx + 1}</td>
+                  <td className="font-bold">{tp.name}</td>
+                  <td className="mono text-xs">{tp.sku}</td>
+                  <td><span className={`product-brand-tag ${bClass}`}>{tp.brandName}</span></td>
+                  <td className="text-right mono font-bold">{tp.totalQuantity}</td>
+                  <td className="text-right mono font-bold" style={{ color: 'var(--color-heading)' }}>
+                    ₹{Number(tp.totalRevenue || 0).toFixed(2)}
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+
+      {/* Category-Wise Sales Table */}
+      <div className="admin-table-card">
+        <div style={{ padding: '16px 20px', borderBottom: '1px solid var(--border-default)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <div>
+            <h4 style={{ color: 'var(--text-primary)', fontSize: '1rem', margin: 0 }}>
+              Category-Wise Sales Breakdown
+            </h4>
+            <span className="text-xs text-muted">Category volume, tax, and sales turnover</span>
+          </div>
+          <span className="badge badge-info">{categorySales.length} categories</span>
+        </div>
+        <table className="admin-table">
+          <thead>
+            <tr>
+              <th>Category Name</th>
+              <th>Brand</th>
+              <th className="text-right">Invoices</th>
+              <th className="text-right">Items Sold</th>
+              <th className="text-right">Taxable Value</th>
+              <th className="text-right">Total Tax</th>
+              <th className="text-right">Net Sales</th>
+            </tr>
+          </thead>
+          <tbody>
+            {categorySales.length === 0 ? (
+              <tr><td colSpan="7" style={{ textAlign: 'center', padding: '24px', color: 'var(--text-muted)' }}>No category sales recorded for this period.</td></tr>
+            ) : categorySales.map((cs, idx) => {
+              const isSeris = String(cs.brandName).toLowerCase().includes('seri');
+              const bClass = isSeris ? 'brand-seris' : 'brand-8it';
+              return (
+                <tr key={cs.categoryId || idx}>
+                  <td className="font-bold">{cs.categoryName}</td>
+                  <td><span className={`product-brand-tag ${bClass}`}>{cs.brandName}</span></td>
+                  <td className="text-right mono">{cs.invoiceCount}</td>
+                  <td className="text-right mono font-bold">{cs.itemsSold}</td>
+                  <td className="text-right mono">₹{Number(cs.taxableAmount || 0).toFixed(2)}</td>
+                  <td className="text-right mono" style={{ color: 'var(--color-accent)' }}>₹{Number(cs.totalTax || 0).toFixed(2)}</td>
+                  <td className="text-right mono font-bold" style={{ color: 'var(--color-heading)' }}>
+                    ₹{Number(cs.netSales || 0).toFixed(2)}
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+
+      {/* Statutory GST Tax Allocation Table */}
+      <div className="admin-table-card">
+        <div style={{ padding: '16px 20px', borderBottom: '1px solid var(--border-default)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <div>
+            <h4 style={{ color: 'var(--text-primary)', fontSize: '1rem', margin: 0 }}>
+              Statutory Tax Allocation Breakdown
+            </h4>
+            <span className="text-xs text-muted">Exact GST rate slab distribution from invoice item snapshots</span>
+          </div>
+          <span className="badge badge-warning">{taxBreakdown.length} slabs</span>
+        </div>
+        <table className="admin-table">
+          <thead>
+            <tr>
+              <th>Tax Slab</th>
+              <th className="text-right">Items Sold</th>
+              <th className="text-right">Taxable Value</th>
+              <th className="text-right">CGST</th>
+              <th className="text-right">SGST</th>
+              <th className="text-right">Cess</th>
+              <th className="text-right">Total GST</th>
+              <th className="text-right">Total Value</th>
+            </tr>
+          </thead>
+          <tbody>
+            {taxBreakdown.length === 0 ? (
+              <tr><td colSpan="8" style={{ textAlign: 'center', padding: '24px', color: 'var(--text-muted)' }}>No tax breakdown recorded for this period.</td></tr>
+            ) : taxBreakdown.map((tb, idx) => (
               <tr key={idx}>
-                <td className="font-bold">{tp.product_name}</td>
-                <td><span className="product-brand-tag">{tp.brand_name}</span></td>
-                <td className="text-right mono font-bold">{tp.quantity_sold}</td>
-                <td className="text-right mono font-bold" style={{ color: '#10b981' }}>
-                  ₹{Number(tp.net_sales || 0).toFixed(2)}
+                <td className="font-bold">{tb.slabName}</td>
+                <td className="text-right mono">{tb.itemsSold}</td>
+                <td className="text-right mono">₹{Number(tb.taxableAmount || 0).toFixed(2)}</td>
+                <td className="text-right mono" style={{ color: 'var(--color-accent)' }}>₹{Number(tb.cgst || 0).toFixed(2)}</td>
+                <td className="text-right mono" style={{ color: 'var(--color-accent)' }}>₹{Number(tb.sgst || 0).toFixed(2)}</td>
+                <td className="text-right mono">₹{Number(tb.cess || 0).toFixed(2)}</td>
+                <td className="text-right mono font-bold" style={{ color: 'var(--color-accent)' }}>
+                  ₹{Number(tb.totalTax || 0).toFixed(2)}
+                </td>
+                <td className="text-right mono font-bold" style={{ color: 'var(--color-heading)' }}>
+                  ₹{Number(tb.netSales || 0).toFixed(2)}
                 </td>
               </tr>
             ))}
@@ -303,16 +574,16 @@ export function ReportsScreen() {
       {/* Statutory GST Disclaimer */}
       <div
         style={{
-          borderTop: '1px solid #1e293b',
+          borderTop: '1px solid var(--border-default)',
           paddingTop: '14px',
           textAlign: 'center',
-          color: '#64748b',
+          color: 'var(--color-text-muted)',
           fontSize: '0.75rem',
           lineHeight: '1.5'
         }}
       >
         <p>
-          ⚖️ Operational tax summaries reflect POS transactional data. Official GSTR-1, GSTR-3B, and statutory filings must be verified and reconciled with filed returns and books of accounts.
+          ⚖️ Operational reports based on immutable invoice item snapshots. Official GSTR-1, GSTR-3B, and statutory filings must be verified with filed returns and accountant books of accounts.
         </p>
       </div>
     </div>

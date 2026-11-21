@@ -48,16 +48,28 @@ async function hasUpdatedAtColumn(client) {
  */
 function mapTaxRateRowToDto(row) {
   if (!row) return null;
+  const rateStr = Number(row.rate_percentage).toFixed(2);
+  const cgstStr = Number(row.cgst_rate).toFixed(2);
+  const sgstStr = Number(row.sgst_rate).toFixed(2);
+  const igstStr = Number(row.igst_rate).toFixed(2);
+  const cessStr = Number(row.cess_rate || 0).toFixed(2);
   return {
     id: row.id,
     companyId: row.company_id,
+    company_id: row.company_id,
     name: row.name,
-    ratePercentage: Number(row.rate_percentage).toFixed(2),
-    cgstRate: Number(row.cgst_rate).toFixed(2),
-    sgstRate: Number(row.sgst_rate).toFixed(2),
-    igstRate: Number(row.igst_rate).toFixed(2),
-    cessRate: Number(row.cess_rate || 0).toFixed(2),
+    ratePercentage: rateStr,
+    rate_percentage: rateStr,
+    cgstRate: cgstStr,
+    cgst_rate: cgstStr,
+    sgstRate: sgstStr,
+    sgst_rate: sgstStr,
+    igstRate: igstStr,
+    igst_rate: igstStr,
+    cessRate: cessStr,
+    cess_rate: cessStr,
     isActive: row.is_active,
+    is_active: row.is_active,
     description: row.description || null,
     createdAt: row.created_at,
     updatedAt: row.updated_at || row.created_at,

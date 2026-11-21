@@ -1,0 +1,31 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <linearGradient id="bgGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#084E39"/>
+      <stop offset="50%" stop-color="#063F2E"/>
+      <stop offset="100%" stop-color="#04281D"/>
+    </linearGradient>
+    <filter id="subtleShadow" x="-10%" y="-10%" width="120%" height="120%">
+      <feDropShadow dx="0" dy="8" stdDeviation="16" flood-color="#000000" flood-opacity="0.25"/>
+    </filter>
+  </defs>
+
+  <!-- Background container -->
+  <rect width="512" height="512" rx="112" fill="url(#bgGrad)"/>
+
+  <!-- Inner accent ring -->
+  <rect x="24" y="24" width="464" height="464" rx="92" fill="none" stroke="#227555" stroke-width="3" stroke-opacity="0.35"/>
+
+  <!-- Brand Symbol & Typography -->
+  <g filter="url(#subtleShadow)">
+    <!-- 8it badge text -->
+    <text x="256" y="275" font-family="'Manrope', 'Inter', -apple-system, sans-serif" font-size="160" font-weight="800" fill="#FFFFFF" text-anchor="middle" letter-spacing="-6">8it</text>
+    
+    <!-- Subtitle text CAFE -->
+    <text x="256" y="340" font-family="'Inter', -apple-system, sans-serif" font-size="34" font-weight="700" fill="#9EE2B3" text-anchor="middle" letter-spacing="12">CAFE</text>
+  </g>
+
+  <!-- Cafe steam / leaf accent mark -->
+  <path d="M 236 128 C 236 128 256 104 286 114 C 286 114 278 138 250 144 Z" fill="#9EE2B3" opacity="0.9"/>
+  <path d="M 226 142 C 226 142 242 122 266 130 C 266 130 260 150 238 154 Z" fill="#5CCF7E" opacity="0.75"/>
+</svg>

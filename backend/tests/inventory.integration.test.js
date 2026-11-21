@@ -57,6 +57,7 @@ describe('Inventory & Stock Management Integration Tests', () => {
     const url = `${baseUrl}${path}`;
     const headers = {
       'Content-Type': 'application/json',
+      'Connection': 'close',
       ...(options.headers || {})
     };
 
@@ -286,10 +287,10 @@ describe('Inventory & Stock Management Integration Tests', () => {
 
   after(async () => {
     if (server) {
+      if (typeof server.closeAllConnections === "function") server.closeAllConnections();
       await new Promise(r => server.close(r));
     }
     await cleanupFixtures();
-    await pool.end();
   });
 
   // ==========================================================================

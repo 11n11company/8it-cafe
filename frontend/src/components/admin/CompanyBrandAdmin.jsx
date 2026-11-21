@@ -4,8 +4,12 @@ import { Modal } from '../common/Modal';
 import { Badge } from '../common/Badge';
 import { Alert } from '../common/Alert';
 import { api } from '../../services/api';
+import { useAuth } from '../../context/AuthContext';
 
 export function CompanyBrandAdmin() {
+  const { hasRole, hasPermission } = useAuth();
+  const canManageBrands = hasRole('ADMIN') || hasPermission('brand:create');
+
   const [company, setCompany] = useState(null);
   const [brands, setBrands] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -25,12 +29,16 @@ export function CompanyBrandAdmin() {
     setLoading(true);
     setError(null);
     try {
-      const [cRes, bRes] = await Promise.all([
+      const results = await Promise.allSettled([
         api.company.get(),
-        api.brands.list()
+        api.brands.list({ includeInactive: true })
       ]);
-      setCompany(cRes?.data || null);
-      setBrands(bRes?.data || []);
+      const [cRes, bRes] = results;
+      if (cRes.status === 'fulfilled') setCompany(cRes.value?.data || null);
+      if (bRes.status === 'fulfilled') setBrands(bRes.value?.data || []);
+      if (bRes.status === 'rejected') {
+        setError(bRes.reason?.message || 'Failed to load brands');
+      }
     } catch (err) {
       setError(err.message || 'Failed to load company and brand information');
     } finally {
@@ -70,6 +78,10 @@ export function CompanyBrandAdmin() {
   };
 
   const handleOpenCreateBrand = () => {
+    if (!canManageBrands) {
+      alert('Access denied: Admin privileges required to create brands.');
+      return;
+    }
     setEditingBrand(null);
     setBrandForm({ name: '', code: '', description: '', display_order: brands.length + 1 });
     setBrandModalOpen(true);
@@ -81,7 +93,7 @@ export function CompanyBrandAdmin() {
       name: b.name,
       code: b.code,
       description: b.description || '',
-      display_order: b.display_order || 1
+      display_order: b.displayOrder !== undefined ? b.displayOrder : (b.display_order || 1)
     });
     setBrandModalOpen(true);
   };
@@ -122,22 +134,19 @@ export function CompanyBrandAdmin() {
   };
 
   const handleToggleBrandStatus = async (brand) => {
-    const nextStatus = !brand.is_active;
-    const confirmMsg = nextStatus
-      ? `Activate brand "${brand.name}"?`
-      : `Deactivate brand "${brand.name}"? Products under this brand will be hidden from cashiers.`;
-    if (!window.confirm(confirmMsg)) return;
+    const currentActive = brand.isActive !== undefined ? Boolean(brand.isActive) : Boolean(brand.is_active);
+    const nextStatus = !currentActive;
 
     try {
       await api.brands.toggleStatus(brand.id, nextStatus);
-      loadData();
+      await loadData();
     } catch (err) {
       alert(err.message || 'Failed to toggle brand status');
     }
   };
 
   if (loading) {
-    return <div style={{ color: '#94a3b8', padding: '24px', textAlign: 'center' }}>Loading company & brand details...</div>;
+    return <div style={{ color: 'var(--color-text-muted)', padding: '24px', textAlign: 'center' }}>Loading company & brand details...</div>;
   }
 
   return (
@@ -149,9 +158,9 @@ export function CompanyBrandAdmin() {
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '16px' }}>
           <div>
             <span className="section-label">Tenant Entity Profile</span>
-            <h3 style={{ fontSize: '1.3rem', color: '#f8fafc' }}>{company?.legal_name || 'Cafe Company'}</h3>
+            <h3 style={{ fontSize: '1.3rem', color: 'var(--color-heading)' }}>{company?.legal_name || 'Cafe Company'}</h3>
             {company?.trade_name && (
-              <div style={{ fontSize: '0.9rem', color: '#94a3b8' }}>Trade Name: {company.trade_name}</div>
+              <div style={{ fontSize: '0.9rem', color: 'var(--color-text-muted)' }}>Trade Name: {company.trade_name}</div>
             )}
           </div>
           <Button variant="secondary" size="sm" onClick={handleOpenEditCompany}>
@@ -162,7 +171,7 @@ export function CompanyBrandAdmin() {
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '14px', fontSize: '0.88rem' }}>
           <div>
             <span className="text-xs text-muted block">GSTIN / TAX ID</span>
-            <span className="mono font-bold" style={{ color: '#3b82f6' }}>{company?.gstin || '—'}</span>
+            <span className="mono font-bold" style={{ color: 'var(--primary)' }}>{company?.gstin || '—'}</span>
           </div>
           <div>
             <span className="text-xs text-muted block">PAN</span>
@@ -187,12 +196,18 @@ export function CompanyBrandAdmin() {
       <div>
         <div className="admin-toolbar">
           <div>
-            <h3 style={{ fontSize: '1.1rem', color: '#f8fafc' }}>Operating Brands</h3>
+            <h3 style={{ fontSize: '1.1rem', color: 'var(--color-heading)' }}>Operating Brands</h3>
             <p className="text-xs text-muted">Manage multi-brand outlets under this tenant company</p>
           </div>
-          <Button variant="primary" size="sm" onClick={handleOpenCreateBrand}>
-            + Add New Brand
-          </Button>
+          {canManageBrands ? (
+            <Button variant="primary" size="sm" onClick={handleOpenCreateBrand}>
+              + Add New Brand
+            </Button>
+          ) : (
+            <span style={{ fontSize: '0.8rem', color: 'var(--color-text-muted)', fontStyle: 'italic' }}>
+              Read-Only (Admin role required to add brands)
+            </span>
+          )}
         </div>
 
         <div className="admin-table-card">
@@ -208,31 +223,35 @@ export function CompanyBrandAdmin() {
               </tr>
             </thead>
             <tbody>
-              {brands.map((b) => (
-                <tr key={b.id}>
-                  <td className="font-bold">{b.name}</td>
-                  <td className="mono text-xs">{b.code}</td>
-                  <td className="text-secondary text-sm">{b.description || '—'}</td>
-                  <td>{b.display_order}</td>
-                  <td>
-                    <Badge status={b.is_active ? 'ACTIVE' : 'INACTIVE'} />
-                  </td>
-                  <td style={{ textAlign: 'right' }}>
-                    <div style={{ display: 'inline-flex', gap: '6px' }}>
-                      <Button variant="outline" size="sm" onClick={() => handleOpenEditBrand(b)}>
-                        Edit
-                      </Button>
-                      <Button
-                        variant={b.is_active ? 'danger' : 'success'}
-                        size="sm"
-                        onClick={() => handleToggleBrandStatus(b)}
-                      >
-                        {b.is_active ? 'Deactivate' : 'Activate'}
-                      </Button>
-                    </div>
-                  </td>
-                </tr>
-              ))}
+              {brands.map((b) => {
+                const isBrandActive = b.isActive !== undefined ? Boolean(b.isActive) : Boolean(b.is_active);
+                const displayOrder = b.displayOrder !== undefined ? b.displayOrder : b.display_order;
+                return (
+                  <tr key={b.id}>
+                    <td className="font-bold">{b.name}</td>
+                    <td className="mono text-xs">{b.code}</td>
+                    <td className="text-secondary text-sm">{b.description || '—'}</td>
+                    <td>{displayOrder}</td>
+                    <td>
+                      <Badge status={isBrandActive ? 'ACTIVE' : 'INACTIVE'} />
+                    </td>
+                    <td style={{ textAlign: 'right' }}>
+                      <div style={{ display: 'inline-flex', gap: '6px' }}>
+                        <Button variant="outline" size="sm" onClick={() => handleOpenEditBrand(b)}>
+                          Edit
+                        </Button>
+                        <Button
+                          variant={isBrandActive ? 'danger' : 'success'}
+                          size="sm"
+                          onClick={() => handleToggleBrandStatus(b)}
+                        >
+                          {isBrandActive ? 'Deactivate' : 'Activate'}
+                        </Button>
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </div>

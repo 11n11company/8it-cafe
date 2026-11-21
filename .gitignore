@@ -46,3 +46,18 @@ temp/
 # Docker overrides
 docker-compose.override.yml
 
+
+# Uploaded product images (runtime data)
+backend/uploads/
+
+# Local database backups and binary dumps
+*.dump
+backups/
+
+# Android print agent local machine SDK and Gradle caches
+android-print-agent/local.properties
+android-print-agent/.gradle/
+
+# Temporary scratch scripts and files
+scratch/
+

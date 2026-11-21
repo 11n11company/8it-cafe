@@ -1,0 +1,1112 @@
+/* ==========================================================================
+   8it Cafe — Shared Design System Layer
+   Loaded after index.css. Every module (POS, waiter, cashier tables, admin,
+   reports, auth) resolves to these primitives and tokens (see :root in
+   index.css). Edit tokens there; edit component standards here.
+   ========================================================================== */
+
+/* --------------------------------------------------------------------------
+   1. Base & typography
+   -------------------------------------------------------------------------- */
+html, body {
+  font-family: var(--font-body);
+  font-size: 14px;
+  line-height: 1.5;
+  color: var(--color-text);
+  background-color: var(--color-bg);
+}
+
+h1, h2, h3, h4, h5, h6 {
+  font-family: var(--font-ui);
+  color: var(--color-heading);
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  line-height: 1.3;
+}
+
+button, .ui-btn, nav, .nav-tab-btn, .saas-nav-item {
+  font-family: var(--font-ui);
+}
+
+input, select, textarea, table {
+  font-family: var(--font-body);
+}
+
+.mono,
+.mono * {
+  font-family: var(--font-body);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0;
+}
+
+.text-xs { font-size: var(--fs-xs); }
+.text-sm { font-size: var(--fs-sm); }
+.text-muted { color: var(--color-text-muted); }
+.text-secondary { color: var(--color-text); }
+
+.hero-title {
+  font-family: var(--font-hero);
+  font-weight: 700;
+  color: var(--color-heading);
+  letter-spacing: -0.01em;
+}
+
+:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 2px;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+/* Quiet scrollbars */
+* { scrollbar-width: thin; scrollbar-color: var(--color-border-strong) transparent; }
+*::-webkit-scrollbar { width: 8px; height: 8px; }
+*::-webkit-scrollbar-thumb { background: var(--color-border-strong); border-radius: 8px; }
+*::-webkit-scrollbar-track { background: transparent; }
+
+/* --------------------------------------------------------------------------
+   2. Buttons
+   -------------------------------------------------------------------------- */
+.ui-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  height: var(--control-height);
+  padding: 0 18px;
+  border-radius: var(--radius-md);
+  border: 1px solid transparent;
+  font-family: var(--font-ui);
+  font-size: var(--fs-base);
+  font-weight: 700;
+  line-height: 1;
+  white-space: nowrap;
+  cursor: pointer;
+  text-decoration: none;
+  user-select: none;
+  transition: background-color var(--transition), border-color var(--transition), color var(--transition);
+}
+.ui-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+.ui-btn--sm { height: var(--control-height-sm); padding: 0 12px; font-size: var(--fs-sm); }
+.ui-btn--lg { height: 52px; padding: 0 24px; font-size: var(--fs-md); }
+.ui-btn--block { width: 100%; }
+
+.ui-btn--primary { background: var(--color-primary); color: var(--color-on-primary); }
+.ui-btn--primary:hover:not(:disabled) { background: var(--color-primary-hover); }
+
+.ui-btn--secondary,
+.ui-btn--outline { background: var(--color-surface); color: var(--color-primary); border-color: var(--color-primary); }
+.ui-btn--secondary:hover:not(:disabled),
+.ui-btn--outline:hover:not(:disabled) { background: var(--color-primary-tint); }
+
+.ui-btn--ghost { background: transparent; color: var(--color-text); border-color: var(--color-border); }
+.ui-btn--ghost:hover:not(:disabled) { background: var(--color-surface-muted); }
+
+.ui-btn--success { background: var(--color-success); color: var(--color-on-primary); }
+.ui-btn--success:hover:not(:disabled) { background: var(--color-primary-hover); }
+
+.ui-btn--danger { background: var(--color-danger); color: var(--color-on-primary); }
+.ui-btn--danger:hover:not(:disabled) { background: var(--color-danger-hover); }
+
+.ui-spinner {
+  width: 14px;
+  height: 14px;
+  border: 2px solid currentColor;
+  border-right-color: transparent;
+  border-radius: 50%;
+  animation: spin 0.7s linear infinite;
+  flex-shrink: 0;
+}
+.ui-spinner--lg { width: 32px; height: 32px; border-width: 3px; color: var(--color-primary); }
+
+.ui-icon-btn {
+  width: 40px;
+  height: 40px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--color-border);
+  background: var(--color-surface);
+  color: var(--color-text-muted);
+  font-size: 1rem;
+  cursor: pointer;
+  transition: background-color var(--transition), color var(--transition);
+}
+.ui-icon-btn:hover { background: var(--color-surface-muted); color: var(--color-heading); }
+
+/* --------------------------------------------------------------------------
+   3. Form controls (one standard for every form)
+   -------------------------------------------------------------------------- */
+.form-group {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: var(--field-gap);
+}
+.form-label,
+.ui-label {
+  font-family: var(--font-body);
+  font-size: var(--fs-sm);
+  font-weight: 600;
+  color: var(--color-text);
+  text-transform: none;
+  letter-spacing: 0;
+}
+.form-control,
+.input,
+.ui-input,
+.saas-search-input {
+  width: 100%;
+  min-height: var(--control-height);
+  padding: 0 14px;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  color: var(--color-text);
+  font-family: var(--font-body);
+  font-size: var(--fs-base);
+  outline: none;
+  transition: border-color var(--transition), box-shadow var(--transition);
+  user-select: text;
+}
+textarea.form-control,
+textarea.input,
+textarea.ui-input { padding: 10px 14px; min-height: 88px; line-height: 1.5; resize: vertical; }
+select.form-control,
+select.input,
+select.ui-input { padding-right: 36px; cursor: pointer; }
+.form-control::placeholder,
+.input::placeholder,
+.ui-input::placeholder { color: var(--color-text-muted); opacity: 0.8; }
+.form-control:focus,
+.input:focus,
+.ui-input:focus,
+.saas-search-input:focus {
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 3px var(--color-focus-ring);
+}
+.form-control:disabled,
+.input:disabled { background: var(--color-surface-muted); color: var(--color-text-muted); cursor: not-allowed; }
+.form-hint { font-size: var(--fs-xs); color: var(--color-text-muted); }
+.form-error { font-size: var(--fs-xs); color: var(--color-danger); font-weight: 500; }
+.required::after { content: ' *'; color: var(--color-danger); }
+
+input[type="checkbox"],
+input[type="radio"] { accent-color: var(--color-primary); width: 18px; height: 18px; }
+
+/* --------------------------------------------------------------------------
+   4. Cards
+   -------------------------------------------------------------------------- */
+.ui-card,
+.admin-table-card,
+.stat-card,
+.saas-metric-card,
+.saas-kpi-card {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  box-shadow: none;
+}
+.ui-card { padding: var(--card-padding); }
+
+.stat-card-row {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 16px;
+  margin-bottom: var(--section-gap);
+}
+.stat-card { padding: var(--card-padding); display: flex; flex-direction: column; gap: 6px; }
+.stat-card[style*="border-left"] { border-left-width: 1px !important; border-left-color: var(--color-border) !important; }
+.stat-card-title,
+.saas-metric-label,
+.saas-kpi-label {
+  font-family: var(--font-body);
+  font-size: var(--fs-xs);
+  font-weight: 600;
+  color: var(--color-text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.stat-card-val,
+.saas-metric-value,
+.saas-kpi-value {
+  font-family: var(--font-ui);
+  font-size: var(--fs-2xl);
+  font-weight: 700;
+  color: var(--color-heading);
+  font-variant-numeric: tabular-nums;
+  line-height: 1.2;
+}
+.saas-kpi-sub { font-size: var(--fs-xs); color: var(--color-text-muted); }
+
+/* --------------------------------------------------------------------------
+   5. Page & section headers
+   -------------------------------------------------------------------------- */
+.ui-page-header,
+.saas-page-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+  margin-bottom: var(--section-gap);
+}
+.ui-page-title,
+.saas-page-title {
+  font-family: var(--font-ui);
+  font-size: var(--fs-xl);
+  font-weight: 700;
+  color: var(--color-heading);
+  margin: 0;
+}
+.ui-page-desc { font-size: var(--fs-base); color: var(--color-text-muted); margin-top: 2px; }
+
+.admin-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-bottom: 16px;
+  padding: 0;
+  background: transparent;
+  border: none;
+}
+.admin-toolbar h2,
+.admin-toolbar h3,
+.admin-toolbar h4,
+.ui-section-title {
+  font-family: var(--font-ui);
+  font-size: var(--fs-lg) !important;
+  font-weight: 700;
+  color: var(--color-heading) !important;
+  margin: 0;
+}
+
+/* --------------------------------------------------------------------------
+   6. Tables
+   -------------------------------------------------------------------------- */
+.admin-table-card { overflow: hidden; margin-bottom: var(--section-gap); }
+.table-responsive { width: 100%; overflow-x: auto; }
+.admin-table,
+.ui-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--fs-base);
+  color: var(--color-text);
+}
+.admin-table th,
+.ui-table th {
+  height: 44px;
+  padding: 0 16px;
+  background: var(--color-surface-muted);
+  border-bottom: 1px solid var(--color-border);
+  font-family: var(--font-body);
+  font-size: var(--fs-xs);
+  font-weight: 600;
+  color: var(--color-text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  text-align: left;
+  white-space: nowrap;
+}
+.admin-table td,
+.ui-table td {
+  height: var(--table-row-height);
+  padding: 10px 16px;
+  border-bottom: 1px solid var(--color-border);
+  vertical-align: middle;
+}
+.admin-table tbody tr:last-child td,
+.ui-table tbody tr:last-child td { border-bottom: none; }
+.admin-table tr:hover td,
+.ui-table tr:hover td { background: var(--color-surface-muted); }
+.admin-table th.text-right,
+.admin-table td.text-right { text-align: right; }
+
+/* Inline-styled tables inside admin views follow the same standard */
+.saas-content-viewport table:not(.admin-table) th {
+  height: 44px;
+  padding: 0 16px !important;
+  font-size: var(--fs-xs) !important;
+  font-weight: 600 !important;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--color-text-muted) !important;
+}
+.saas-content-viewport table:not(.admin-table) td {
+  height: var(--table-row-height);
+  padding: 10px 16px !important;
+}
+
+/* --------------------------------------------------------------------------
+   7. Badges / status pills
+   -------------------------------------------------------------------------- */
+.ui-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 22px;
+  padding: 0 8px;
+  border-radius: var(--radius-full);
+  font-family: var(--font-body);
+  font-size: 0.6875rem;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  background: var(--color-surface-muted);
+  color: var(--color-text-muted);
+  border: 1px solid var(--color-border);
+}
+.ui-badge--success { background: var(--color-success-soft); color: var(--color-success); border-color: transparent; }
+.ui-badge--warning { background: var(--color-warning-soft); color: var(--color-warning); border-color: transparent; }
+.ui-badge--danger  { background: var(--color-danger-soft);  color: var(--color-danger);  border-color: transparent; }
+.ui-badge--info    { background: var(--color-info-soft);    color: var(--color-info);    border-color: transparent; }
+.ui-badge--accent  { background: var(--color-accent-soft);  color: var(--color-accent);  border-color: transparent; }
+.ui-badge--primary { background: var(--color-primary-soft); color: var(--color-heading); border-color: transparent; }
+
+/* --------------------------------------------------------------------------
+   8. Alerts / notifications
+   -------------------------------------------------------------------------- */
+.ui-alert {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 12px 14px;
+  border-radius: var(--radius-md);
+  border: 1px solid transparent;
+  font-size: var(--fs-base);
+  line-height: 1.45;
+}
+.ui-alert__icon {
+  width: 20px;
+  height: 20px;
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: var(--color-on-primary);
+}
+.ui-alert__title { font-weight: 600; margin-bottom: 2px; }
+.ui-alert--error   { background: var(--color-danger-soft);  color: var(--color-danger-hover); }
+.ui-alert--error   .ui-alert__icon { background: var(--color-danger); }
+.ui-alert--warning { background: var(--color-warning-soft); color: var(--color-warning); }
+.ui-alert--warning .ui-alert__icon { background: var(--color-warning); }
+.ui-alert--success { background: var(--color-success-soft); color: var(--color-success); }
+.ui-alert--success .ui-alert__icon { background: var(--color-success); }
+.ui-alert--info    { background: var(--color-primary-tint); color: var(--color-heading); }
+.ui-alert--info    .ui-alert__icon { background: var(--color-primary); }
+
+/* --------------------------------------------------------------------------
+   9. Modals & confirmation dialogs
+   -------------------------------------------------------------------------- */
+.ui-modal-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  background: var(--color-overlay);
+}
+.ui-modal {
+  width: 100%;
+  max-height: 92vh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-xl);
+  box-shadow: var(--shadow-lg);
+}
+.ui-modal__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 18px 24px;
+  border-bottom: 1px solid var(--color-border);
+  flex-shrink: 0;
+}
+.ui-modal__title {
+  font-family: var(--font-ui);
+  font-size: var(--fs-lg);
+  font-weight: 700;
+  color: var(--color-heading);
+  margin: 0;
+}
+.ui-modal__subtitle { margin: 2px 0 0; font-size: var(--fs-sm); color: var(--color-text-muted); }
+.ui-modal__close {
+  width: 36px;
+  height: 36px;
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: var(--color-text-muted);
+  font-size: 1rem;
+  cursor: pointer;
+  transition: background-color var(--transition), color var(--transition);
+}
+.ui-modal__close:hover { background: var(--color-surface-muted); color: var(--color-heading); }
+.ui-modal__body {
+  flex: 1 1 auto;
+  min-height: 0;
+  padding: 20px 24px;
+  overflow-x: hidden;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+}
+.ui-modal__footer {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 12px;
+  padding: 16px 24px;
+  border-top: 1px solid var(--color-border);
+  flex-shrink: 0;
+}
+
+/* --------------------------------------------------------------------------
+   10. Tabs, filter pills, sub-navigation
+   -------------------------------------------------------------------------- */
+.admin-subnav,
+.ui-tabs {
+  display: flex;
+  gap: 4px;
+  flex-wrap: wrap;
+  padding: 4px;
+  margin-bottom: var(--section-gap);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  width: fit-content;
+  max-width: 100%;
+}
+.admin-subnav-btn,
+.ui-tab {
+  height: 36px;
+  padding: 0 14px;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--color-text-muted);
+  font-family: var(--font-ui);
+  font-size: var(--fs-sm);
+  font-weight: 600;
+  cursor: pointer;
+  transition: background-color var(--transition), color var(--transition);
+}
+.admin-subnav-btn:hover,
+.ui-tab:hover { color: var(--color-heading); background: var(--color-surface-muted); }
+.admin-subnav-btn.active,
+.ui-tab.active { background: var(--color-primary-soft); color: var(--color-heading); box-shadow: none; }
+
+/* --------------------------------------------------------------------------
+   11. Empty / loading / error states
+   -------------------------------------------------------------------------- */
+.ui-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 48px 24px;
+  text-align: center;
+  color: var(--color-text-muted);
+  font-size: var(--fs-base);
+}
+.ui-state__title { font-family: var(--font-ui); font-weight: 700; color: var(--color-heading); font-size: var(--fs-md); }
+.ui-state--fullscreen { height: 100vh; width: 100vw; background: var(--color-bg); }
+
+/* ==========================================================================
+   12. Admin / Manager shell — single 248px sidebar + page header
+   ========================================================================== */
+.admin-saas-layout { background: var(--color-bg); color: var(--color-text); font-family: var(--font-body); }
+.saas-icon-rail { display: none; }
+
+.saas-sidebar {
+  width: var(--sidebar-width);
+  padding: 20px 16px 16px;
+  background: var(--color-surface);
+  border-right: 1px solid var(--color-border);
+}
+.saas-sidebar-brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0 4px 16px;
+}
+.saas-sidebar-logo {
+  width: 36px;
+  height: 36px;
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius-md);
+  background: var(--color-primary);
+  color: var(--color-on-primary);
+  font-family: var(--font-ui);
+  font-weight: 800;
+  font-size: 0.85rem;
+  letter-spacing: -0.02em;
+}
+.saas-sidebar-brand-name { font-family: var(--font-ui); font-weight: 700; font-size: var(--fs-md); color: var(--color-heading); line-height: 1.2; }
+.saas-sidebar-brand-sub { font-size: var(--fs-xs); color: var(--color-text-muted); }
+
+.saas-brand-selector {
+  padding: 0;
+  margin-bottom: 16px;
+  background: transparent;
+  border: none;
+  cursor: default;
+}
+.saas-brand-selector:hover { background: transparent; }
+.saas-brand-info { width: 100%; }
+.saas-brand-title { display: none; }
+.saas-brand-select-dropdown {
+  width: 100%;
+  height: 40px;
+  margin: 0;
+  padding: 0 12px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+  color: var(--color-text);
+  font-family: var(--font-body);
+  font-size: var(--fs-sm);
+  font-weight: 500;
+}
+.saas-brand-select-dropdown:focus { border-color: var(--color-primary); box-shadow: 0 0 0 3px var(--color-focus-ring); }
+
+.saas-nav-group { gap: 2px; margin-bottom: 16px; }
+.saas-nav-header {
+  font-family: var(--font-body);
+  font-size: 0.6875rem;
+  font-weight: 600;
+  color: var(--color-text-muted);
+  letter-spacing: 0.06em;
+  padding-left: 12px;
+  margin-bottom: 4px;
+}
+.saas-nav-item {
+  min-height: 40px;
+  padding: 0 12px;
+  gap: 12px;
+  border-radius: var(--radius-sm);
+  color: var(--color-text);
+  font-family: var(--font-ui);
+  font-size: var(--fs-base);
+  font-weight: 600;
+}
+.saas-nav-item:hover { background: var(--color-surface-muted); color: var(--color-heading); }
+.saas-nav-item.active { background: var(--color-primary-soft); color: var(--color-heading); box-shadow: none; }
+.saas-nav-icon { width: 20px; font-size: var(--icon-size); text-align: center; line-height: 1; filter: grayscale(1); opacity: 0.7; }
+.saas-nav-item.active .saas-nav-icon { opacity: 1; filter: grayscale(0.4); }
+
+.saas-sidebar-footer { padding-top: 12px; border-top: 1px solid var(--color-border); display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.saas-user-chip { min-width: 0; }
+.saas-user-avatar { width: 36px; height: 36px; background: var(--color-primary-soft); color: var(--color-heading); font-family: var(--font-ui); flex-shrink: 0; }
+.saas-user-meta { min-width: 0; }
+.saas-user-name { font-size: var(--fs-sm); font-weight: 600; color: var(--color-heading); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.saas-user-role { font-size: 0.6875rem; font-weight: 600; color: var(--color-text-muted); letter-spacing: 0.04em; }
+
+.saas-workspace { background: var(--color-bg); }
+.saas-top-header {
+  height: auto;
+  min-height: 72px;
+  padding: 14px var(--page-padding);
+  background: var(--color-surface);
+  border-bottom: 1px solid var(--color-border);
+  gap: 16px;
+}
+.saas-top-left { min-width: 0; }
+.saas-header-title { font-family: var(--font-ui); font-size: var(--fs-xl); font-weight: 700; color: var(--color-heading); margin: 0; line-height: 1.25; }
+.saas-header-desc { font-size: var(--fs-sm); color: var(--color-text-muted); margin-top: 2px; }
+.saas-clock { font-family: var(--font-body); font-variant-numeric: tabular-nums; font-size: var(--fs-sm); color: var(--color-text-muted); white-space: nowrap; }
+.saas-pill-btn {
+  height: 40px;
+  padding: 0 16px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--color-primary);
+  background: var(--color-surface);
+  color: var(--color-primary);
+  font-family: var(--font-ui);
+  font-size: var(--fs-sm);
+  font-weight: 700;
+}
+.saas-pill-btn:hover { background: var(--color-primary-tint); }
+.saas-pill-btn.danger { border-color: var(--color-border); color: var(--color-danger); }
+.saas-pill-btn.danger:hover { background: var(--color-danger-soft); }
+
+.saas-content-viewport { padding: var(--page-padding); }
+.saas-content-viewport > * + * { margin-top: 0; }
+
+/* Page titles now live in the workspace header; in-view title rows keep only their actions */
+.saas-content-viewport .saas-page-header { margin-bottom: 16px; }
+.saas-content-viewport .saas-page-title { display: none; }
+
+/* Search fields */
+.saas-header-search { position: relative; display: flex; align-items: center; min-width: 260px; max-width: 420px; flex: 1; }
+.saas-header-search .saas-search-icon { position: absolute; left: 12px; font-size: 0.85rem; opacity: 0.55; pointer-events: none; }
+.saas-header-search .saas-search-input { padding-left: 36px; }
+
+/* Admin metric & order cards */
+.saas-metric-card,
+.saas-kpi-card { padding: var(--card-padding); }
+
+/* Admin content uses the system palette for inline cards */
+.admin-content-area { padding: 0; }
+.admin-screen { background: transparent; }
+
+/* ==========================================================================
+   13. Cashier POS top navigation — white bar, consistent with admin header
+   ========================================================================== */
+.top-header {
+  height: var(--header-height);
+  padding: 0 16px;
+  background: var(--color-surface);
+  border-bottom: 1px solid var(--color-border);
+}
+.brand-icon-box {
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius-md);
+  background: var(--color-primary);
+  color: var(--color-on-primary);
+  font-family: var(--font-ui);
+  font-size: 0.85rem;
+  box-shadow: none;
+}
+.company-name { font-family: var(--font-ui); color: var(--color-heading); font-size: var(--fs-md); }
+.company-gstin { font-family: var(--font-body); color: var(--color-text-muted); font-size: var(--fs-xs); }
+.nav-links { background: var(--color-surface-muted); border: 1px solid var(--color-border); padding: 4px; gap: 2px; }
+.nav-tab-btn { min-height: 40px; color: var(--color-text-muted); font-size: var(--fs-base); }
+.nav-tab-btn:hover { color: var(--color-heading); background: var(--color-surface); }
+.nav-tab-btn.active { background: var(--color-primary-soft); color: var(--color-heading); box-shadow: none; }
+.header-clock { font-family: var(--font-body); font-variant-numeric: tabular-nums; color: var(--color-text-muted); }
+.cashier-pill { background: var(--color-surface); border: 1px solid var(--color-border); min-height: 44px; }
+.cashier-pill:hover,
+.cashier-pill.active { background: var(--color-surface-muted); border-color: var(--color-border-strong); box-shadow: none; }
+.cashier-avatar { background: var(--color-primary-soft); color: var(--color-heading); border: none; width: 32px; height: 32px; }
+.cashier-name { color: var(--color-heading); }
+.cashier-role-tag { color: var(--color-text-muted); }
+.cashier-pill:hover .cashier-dropdown-arrow,
+.cashier-pill.active .cashier-dropdown-arrow { color: var(--color-heading); }
+.btn-switch-pin { background: var(--color-surface) !important; color: var(--color-primary) !important; border: 1px solid var(--color-primary) !important; }
+.btn-switch-pin:hover { background: var(--color-primary-tint) !important; }
+.btn-header-logout { background: var(--color-surface) !important; color: var(--color-danger) !important; border: 1px solid var(--color-border) !important; }
+.btn-header-logout:hover { background: var(--color-danger-soft) !important; color: var(--color-danger) !important; }
+
+/* ==========================================================================
+   14. Primary operational actions (POS, waiter, cashier tables)
+   ========================================================================== */
+.btn-checkout,
+.btn-collect-payment,
+.btn-send-kot,
+.btn-confirm-seat {
+  min-height: 48px;
+  border-radius: var(--radius-md);
+  background: var(--color-primary);
+  color: var(--color-on-primary);
+  font-family: var(--font-ui);
+  font-weight: 700;
+  box-shadow: none;
+}
+.btn-checkout:hover:not(:disabled),
+.btn-collect-payment:hover:not(:disabled),
+.btn-send-kot:hover:not(:disabled),
+.btn-confirm-seat:hover:not(:disabled) { background: var(--color-primary-hover); }
+.btn-hold,
+.btn-request-bill {
+  min-height: 48px;
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+  color: var(--color-primary);
+  border: 1px solid var(--color-primary);
+  font-family: var(--font-ui);
+  font-weight: 700;
+  box-shadow: none;
+}
+.btn-hold:hover:not(:disabled),
+.btn-request-bill:hover:not(:disabled) { background: var(--color-primary-tint); }
+.qty-btn { min-width: 36px; min-height: 36px; }
+
+/* ==========================================================================
+   15. Tablet (10-inch landscape ≈ 1280×800) and smaller
+   ========================================================================== */
+@media (max-width: 1280px) {
+  :root { --page-padding: 20px; --sidebar-width: 224px; }
+}
+@media (max-width: 1024px) {
+  :root { --page-padding: 16px; --sidebar-width: 208px; }
+  .saas-header-search { min-width: 200px; }
+  .saas-top-header .saas-clock { display: none; }
+}
+
+/* ==========================================================================
+   16. Waiter terminal headers — same white top bar as cashier & admin
+   ========================================================================== */
+.waiter-top-header,
+.waiter-order-header {
+  min-height: var(--header-height);
+  padding: 8px var(--page-padding);
+  background: var(--color-surface);
+  color: var(--color-text);
+  border-bottom: 1px solid var(--color-border);
+  box-shadow: none;
+}
+.brand-headings .brand-main { font-family: var(--font-ui); font-size: var(--fs-md); font-weight: 700; color: var(--color-heading); }
+.brand-headings .brand-sub { font-size: var(--fs-xs); font-weight: 500; color: var(--color-text-muted); }
+.header-center-info .live-clock { background: transparent; padding: 0; font-family: var(--font-body); font-variant-numeric: tabular-nums; font-weight: 500; color: var(--color-text-muted); }
+.header-user-wrap .user-pill { background: var(--color-surface); border: 1px solid var(--color-border); color: var(--color-heading); min-height: 40px; }
+.header-user-wrap .user-pill .user-icon { display: none; }
+.waiter-logout-btn {
+  height: 40px;
+  padding: 0 16px;
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+  color: var(--color-danger);
+  border: 1px solid var(--color-border);
+  font-family: var(--font-ui);
+  font-weight: 700;
+}
+.waiter-logout-btn:hover { background: var(--color-danger-soft); }
+.waiter-back-btn {
+  height: 40px;
+  padding: 0 14px;
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+  color: var(--color-primary);
+  border: 1px solid var(--color-primary);
+  font-family: var(--font-ui);
+  font-weight: 700;
+}
+.waiter-back-btn:hover { background: var(--color-primary-tint); }
+.waiter-prominent-heading { color: var(--color-heading); font-family: var(--font-ui); }
+.waiter-tag { background: var(--color-surface-muted); color: var(--color-text); border: 1px solid var(--color-border); }
+.waiter-tag.waiter-staff strong { color: var(--color-heading); }
+.waiter-status-badge { background: var(--color-primary-soft); color: var(--color-heading); }
+
+/* ==========================================================================
+   17. Misc standardisation
+   ========================================================================== */
+/* Selected navigation always uses the soft-green selection colour */
+.sidebar-category-item.active,
+.category-nav-item.active,
+.brand-chip.active,
+.kitchen-filter-toggle.active,
+.filter-toggle-btn.active,
+.sidebar-brand-pill.active,
+.table-filter-chip.active,
+.filter-pill.active,
+.saas-filter-pill.active {
+  background: var(--color-primary-soft) !important;
+  color: var(--color-heading) !important;
+  border-color: transparent !important;
+  box-shadow: none !important;
+}
+.admin-table td.mono { white-space: nowrap; }
+.saas-header-search { background: transparent; border: none; padding: 0; box-shadow: none; }
+.cafe-login-page { background: var(--color-bg); }
+.cafe-login-heading { font-family: var(--font-ui); color: var(--color-heading); }
+.category-nav-item.active .category-count,
+.sidebar-category-item.active .cat-item-badge { background: var(--color-surface); color: var(--color-heading); }
+
+/* KPI values use one heading colour; status meaning comes from badges/labels */
+.stat-card-val,
+.saas-metric-value,
+.saas-kpi-value { color: var(--color-heading) !important; }
+
+/* Row-level actions in tables stay light; solid colour is reserved for primary page actions */
+.admin-table .ui-btn,
+.saas-content-viewport table .ui-btn { height: var(--control-height-sm); padding: 0 12px; font-size: var(--fs-sm); }
+.admin-table .ui-btn--danger,
+.saas-content-viewport table .ui-btn--danger { background: var(--color-surface); color: var(--color-danger); border-color: var(--color-border); }
+.admin-table .ui-btn--danger:hover:not(:disabled),
+.saas-content-viewport table .ui-btn--danger:hover:not(:disabled) { background: var(--color-danger-soft); }
+.admin-table .ui-btn--primary,
+.admin-table .ui-btn--success { background: var(--color-surface); color: var(--color-primary); border-color: var(--color-primary); }
+.admin-table .ui-btn--primary:hover:not(:disabled),
+.admin-table .ui-btn--success:hover:not(:disabled) { background: var(--color-primary-tint); }
+.admin-table td:last-child > div,
+.admin-table td:last-child { white-space: nowrap; }
+
+/* ==========================================================================
+   18. Reference design (v2) — typography, cards, sidebar, hero, KPI tiles
+   ========================================================================== */
+/* Buttons: Inter 600; secondary = white with neutral border */
+.ui-btn { font-family: var(--font-body); font-weight: 600; }
+.ui-btn--secondary,
+.ui-btn--outline { background: var(--color-surface); color: var(--color-text); border-color: var(--color-border); }
+.ui-btn--secondary:hover:not(:disabled),
+.ui-btn--outline:hover:not(:disabled) { background: var(--color-surface-muted); border-color: var(--color-border-strong); }
+.saas-pill-btn,
+.nav-tab-btn,
+.btn-checkout, .btn-collect-payment, .btn-send-kot, .btn-confirm-seat, .btn-hold, .btn-request-bill,
+.waiter-logout-btn, .waiter-back-btn { font-family: var(--font-body); font-weight: 600; }
+.saas-pill-btn { border-color: var(--color-border); color: var(--color-text); }
+.saas-pill-btn:hover { background: var(--color-surface-muted); }
+.ui-modal__footer .ui-btn--outline { color: var(--color-text); }
+
+/* Cards: white, 16px radius, soft shadow, no visible border */
+.ui-card, .admin-table-card, .stat-card, .saas-metric-card, .saas-kpi-card,
+.floor-hero-banner, .table-card, .product-card {
+  border-radius: var(--radius-lg);
+  border-color: transparent;
+  box-shadow: var(--shadow-card);
+}
+.ui-modal { border-radius: 16px; box-shadow: var(--shadow-pop); border-color: transparent; }
+
+/* Headings */
+.ui-page-title, .saas-page-title, .saas-header-title { font-size: 1.5rem; font-weight: 700; color: var(--color-heading); }
+.ui-page-desc, .saas-header-desc { font-size: var(--fs-sm); font-weight: 500; color: var(--color-text-muted); }
+.admin-toolbar h2, .admin-toolbar h3, .admin-toolbar h4, .ui-section-title,
+.saas-kpi-card > h4 { font-family: var(--font-ui); font-size: 1.25rem !important; font-weight: 700; color: var(--color-heading) !important; }
+
+/* KPI anatomy: icon tile, label, value with raised currency */
+.stat-card-title, .saas-metric-label, .saas-kpi-label {
+  font-family: var(--font-body);
+  font-size: var(--fs-base);
+  font-weight: 500;
+  color: var(--color-text-secondary);
+  text-transform: none;
+  letter-spacing: 0;
+}
+.stat-card-val, .saas-metric-value, .saas-kpi-value {
+  font-family: var(--font-body);
+  font-size: 1.875rem;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+.kpi-head { display: flex; align-items: center; gap: 12px; margin-bottom: 14px; }
+.kpi-icon {
+  width: 32px; height: 32px; flex-shrink: 0;
+  display: inline-flex; align-items: center; justify-content: center;
+  border-radius: var(--radius-sm);
+  background: var(--color-primary-tint);
+  color: var(--color-primary-icon);
+}
+.kpi-currency { font-size: 0.75rem; font-weight: 600; color: var(--color-text-secondary); vertical-align: 0.95em; margin-right: 4px; }
+.saas-kpi-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 16px; margin-bottom: var(--section-gap); }
+@media (max-width: 1100px) { .saas-kpi-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+
+/* Sidebar (reference) */
+.saas-sidebar { padding: 20px; }
+.saas-sidebar-brand { padding: 0 0 20px; }
+.saas-sidebar-brand-name { font-family: var(--font-ui); font-size: 1.25rem; font-weight: 700; color: var(--color-primary); }
+.saas-nav-header { font-size: 11px; font-weight: 600; color: var(--color-text-subtle); letter-spacing: 0.06em; }
+.saas-nav-item { font-family: var(--font-body); font-weight: 500; color: var(--color-text); gap: 12px; }
+.saas-nav-item.active { font-weight: 600; }
+.saas-nav-icon { display: inline-flex; align-items: center; justify-content: center; width: 20px; color: var(--color-icon); filter: none; opacity: 1; }
+.saas-nav-item.active .saas-nav-icon { color: var(--color-heading); filter: none; }
+.saas-badge-counter { background: var(--color-warning); }
+
+/* Icons everywhere */
+.ui-icon { width: var(--icon-size); height: var(--icon-size); flex-shrink: 0; stroke-width: 1.75; }
+
+/* Hero banner — admin dashboard only */
+.saas-hero {
+  position: relative;
+  min-height: 168px;
+  padding: 20px var(--page-padding);
+  background: var(--hero-gradient);
+  color: var(--color-on-primary);
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: center;
+  gap: 16px;
+  flex-shrink: 0;
+}
+.saas-hero__center { text-align: center; }
+.saas-hero__greeting { font-family: var(--font-body); font-size: 1rem; font-weight: 500; color: rgba(255, 255, 255, 0.9); }
+.saas-hero__name { font-family: var(--font-hero); font-style: italic; font-weight: 500; font-size: 2.25rem; line-height: 1.2; color: #FFFFFF; margin: 2px 0 4px; }
+.saas-hero__date { font-size: var(--fs-sm); font-weight: 500; color: rgba(255, 255, 255, 0.75); }
+.saas-hero__actions { display: flex; align-items: center; justify-content: flex-end; gap: 10px; }
+.saas-hero__clock { font-variant-numeric: tabular-nums; font-size: var(--fs-sm); color: rgba(255, 255, 255, 0.75); margin-right: 4px; }
+.hero-glass-btn {
+  width: 40px; height: 40px;
+  display: inline-flex; align-items: center; justify-content: center;
+  border-radius: 50%;
+  background: var(--hero-glass);
+  border: 1px solid var(--hero-glass-border);
+  color: #FFFFFF;
+  cursor: pointer;
+  transition: background-color var(--transition);
+}
+.hero-glass-btn:hover { background: rgba(255, 255, 255, 0.2); }
+.hero-avatar {
+  width: 40px; height: 40px; border-radius: 50%;
+  display: inline-flex; align-items: center; justify-content: center;
+  background: #FFFFFF; color: var(--color-primary);
+  font-family: var(--font-ui); font-weight: 700;
+}
+@media (max-width: 1024px) {
+  .saas-hero { grid-template-columns: 1fr auto; }
+  .saas-hero__spacer { display: none; }
+  .saas-hero__center { text-align: left; }
+}
+
+/* Top bars (POS / waiter): nav pills with icons */
+.nav-tab-btn .ui-icon, .saas-pill-btn .ui-icon { width: 16px; height: 16px; }
+.saas-pill-btn { display: inline-flex; align-items: center; gap: 8px; }
+
+/* POS totals & primary actions */
+.cart-breakdown-row.grand-total { font-family: var(--font-body); }
+.cart-breakdown-row.grand-total .amount { font-family: var(--font-body); font-size: 1.75rem; font-weight: 700; color: var(--color-heading); }
+.btn-checkout, .btn-hold, .btn-collect-payment, .btn-send-kot, .btn-request-bill { min-height: 52px; }
+
+/* Login: centred white card */
+.cafe-login-form-container {
+  background: var(--color-surface);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-card);
+  padding: 32px;
+}
+.cafe-login-heading { font-size: 1.5rem; font-weight: 700; }
+
+/* Skeleton loading blocks */
+.ui-skeleton {
+  background: linear-gradient(90deg, var(--color-surface-muted) 0%, var(--color-border) 50%, var(--color-surface-muted) 100%);
+  background-size: 200% 100%;
+  animation: ui-shimmer 1.2s ease-in-out infinite;
+  border-radius: var(--radius-sm);
+}
+@keyframes ui-shimmer { from { background-position: 200% 0; } to { background-position: -200% 0; } }
+@media (prefers-reduced-motion: reduce) { .ui-skeleton { animation: none; } }
+
+/* ==========================================================================
+   19. Full-screen workspace pages (e.g. cashier Invoices) — below the top bar
+   ========================================================================== */
+.invoice-history-page {
+  position: fixed;
+  top: var(--header-height);
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 35; /* under the top bar (40) so its menus stay usable; dialogs (1000) sit above */
+  background: var(--color-bg);
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+}
+.invoice-history-page__inner {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: var(--page-padding);
+  min-height: 100%;
+}
+.invoice-history-table { margin-bottom: 0; overflow-x: auto; }
+.invoice-history-table .admin-table td:first-child { white-space: nowrap; }
+
+/* ==========================================================================
+   21. Legacy dialog markup (admin table details, waiter seating) -> standard modal
+   ========================================================================== */
+.cafe-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  background: var(--color-overlay);
+}
+.cafe-modal-dialog {
+  width: 100%;
+  max-width: 480px;
+  max-height: 92vh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background: var(--color-surface);
+  border-radius: 16px;
+  box-shadow: var(--shadow-pop);
+}
+.cafe-modal-dialog .modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 18px 24px;
+  border-bottom: 1px solid var(--color-border);
+  flex-shrink: 0;
+}
+.cafe-modal-dialog .modal-title-wrap { display: flex; align-items: center; gap: 10px; }
+.cafe-modal-dialog .modal-title-wrap h3 { margin: 0; font-family: var(--font-ui); font-size: var(--fs-lg); font-weight: 700; color: var(--color-heading); }
+.cafe-modal-dialog .modal-title-icon { display: none; }
+.cafe-modal-dialog .modal-close-btn {
+  width: 36px;
+  height: 36px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: var(--color-text-muted);
+  font-size: 1rem;
+  cursor: pointer;
+}
+.cafe-modal-dialog .modal-close-btn:hover { background: var(--color-surface-muted); color: var(--color-heading); }
+.cafe-modal-dialog .modal-body { padding: 20px 24px; overflow-y: auto; }
+.cafe-modal-dialog .modal-footer {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 12px;
+  padding: 16px 24px;
+  border-top: 1px solid var(--color-border);
+  flex-shrink: 0;
+}
+.cafe-modal-dialog .btn-cancel {
+  height: var(--control-height);
+  padding: 0 18px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--color-border);
+  background: var(--color-surface);
+  color: var(--color-text);
+  font-family: var(--font-body);
+  font-weight: 600;
+  cursor: pointer;
+}
+.cafe-modal-dialog .btn-cancel:hover { background: var(--color-surface-muted); }
+
+/* ==========================================================================
+   22. Product photo upload
+   ========================================================================== */
+.product-image-upload { display: flex; align-items: center; gap: 16px; }
+.product-image-upload__preview {
+  width: 88px;
+  height: 88px;
+  flex-shrink: 0;
+  border-radius: var(--radius-md);
+  border: 1px dashed var(--color-border-strong);
+  background: var(--color-surface-muted);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  color: var(--color-text-muted);
+}
+.product-image-upload__preview img { width: 100%; height: 100%; object-fit: cover; }
+.product-image-upload__preview .ui-icon { width: 26px; height: 26px; }
+.product-image-upload__body { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.product-image-upload__actions { display: flex; gap: 8px; flex-wrap: wrap; }

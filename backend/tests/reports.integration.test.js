@@ -7,7 +7,7 @@
 
 const { describe, it, before, after } = require('node:test');
 const assert = require('node:assert');
-const { Pool } = require('pg');
+const { createPool } = require('../src/config/database');
 const { createApp } = require('../src/app');
 const { signAccessToken } = require('../src/utils/jwt');
 
@@ -49,6 +49,7 @@ describe('Dashboard & Business Reports Integration Tests', () => {
     const url = `${baseUrl}${path}`;
     const headers = {
       'Content-Type': 'application/json',
+      'Connection': 'close',
       ...(options.headers || {})
     };
 
@@ -110,13 +111,7 @@ describe('Dashboard & Business Reports Integration Tests', () => {
   }
 
   before(async () => {
-    pool = new Pool({
-      host: process.env.DB_HOST || 'localhost',
-      port: parseInt(process.env.DB_PORT || '5432', 10),
-      database: process.env.DB_NAME || 'cafe_cloud_pos',
-      user: process.env.DB_USER || 'cafe_admin',
-      password: process.env.DB_PASSWORD || 'cafe_secure_dev_pass_2026'
-    });
+    pool = createPool();
 
     const timestamp = Date.now();
 
@@ -442,10 +437,15 @@ describe('Dashboard & Business Reports Integration Tests', () => {
 
   after(async () => {
     if (server) {
+      if (typeof server.closeAllConnections === 'function') {
+        server.closeAllConnections();
+      }
       await new Promise(r => server.close(r));
     }
     await cleanupFixtures();
-    await pool.end();
+    if (pool) {
+      await pool.end();
+    }
   });
 
   // ==========================================================================

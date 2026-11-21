@@ -4,7 +4,7 @@
  * and hydrates user & company tenant context from the live database.
  */
 
-const { verifyAccessToken, hashToken } = require('../utils/jwt');
+const { verifyAccessToken, hashToken, AGENT_TOKEN_TYPE } = require('../utils/jwt');
 const { isTokenRevoked, getUserProfile } = require('../services/auth.service');
 const logger = require('../utils/logger');
 
@@ -50,6 +50,19 @@ function createAuthMiddleware(dependencies = {}) {
     try {
       // 1. Verify token signature and expiry
       const decoded = verifyAccessToken(token);
+
+      // 1b. Print agent tokens are signed with a separate key and should never verify
+      // here; reject explicitly as defence in depth so they can never act as a user.
+      if (decoded.typ === AGENT_TOKEN_TYPE || decoded.role === 'PRINT_AGENT') {
+        return res.status(401).json({
+          success: false,
+          error: {
+            code: 'INVALID_TOKEN',
+            message: 'Malformed or invalid access token.'
+          },
+          meta: { timestamp, requestId }
+        });
+      }
 
       // 2. Reject legacy or malformed tokens missing valid tokenVersion claim
       if (typeof decoded.tokenVersion !== 'number' || decoded.tokenVersion < 1) {

@@ -9,7 +9,8 @@ const {
   getCategoryById,
   createCategory,
   updateCategory,
-  updateCategoryStatus
+  updateCategoryStatus,
+  deleteCategory
 } = require('../services/category.service');
 const { createAuthMiddleware } = require('../middleware/authenticate');
 const { requirePermission, enforceTenantIsolation, canManageCatalog } = require('../middleware/authorize');
@@ -191,7 +192,7 @@ function createCategoryRouter(dependencies = {}) {
         const companyId = req.tenant.companyId;
         const categoryId = req.params.id;
         const userId = req.user.id;
-        const { isActive } = req.body || {};
+        const isActive = req.body.isActive !== undefined ? req.body.isActive : req.body.is_active;
         const clientIp = req.ip || req.socket.remoteAddress;
         const userAgent = req.headers['user-agent'] || 'unknown';
 
@@ -207,6 +208,45 @@ function createCategoryRouter(dependencies = {}) {
         return res.status(200).json({
           success: true,
           data: updated,
+          meta: { timestamp, requestId }
+        });
+      } catch (err) {
+        next(err);
+      }
+    }
+  );
+
+  /**
+   * DELETE /api/v1/categories/:id
+   * Delete category (if no products belong to it).
+   */
+  router.delete(
+    '/:id',
+    authenticate,
+    requirePermission('product:update'),
+    enforceTenantIsolation('companyId'),
+    async (req, res, next) => {
+      const timestamp = new Date().toISOString();
+      const requestId = req.id || null;
+
+      try {
+        const companyId = req.tenant.companyId;
+        const categoryId = req.params.id;
+        const userId = req.user.id;
+        const clientIp = req.ip || req.socket.remoteAddress;
+        const userAgent = req.headers['user-agent'] || 'unknown';
+
+        const result = await deleteCategory(
+          companyId,
+          categoryId,
+          userId,
+          { ipAddress: clientIp, userAgent },
+          dbPool
+        );
+
+        return res.status(200).json({
+          success: true,
+          data: result,
           meta: { timestamp, requestId }
         });
       } catch (err) {

@@ -89,12 +89,12 @@ export function CashierSwitchModal({ isOpen, onClose }) {
     <Modal
       isOpen={isOpen}
       onClose={submitting ? undefined : onClose}
-      title="Quick Cashier Switch (4-Digit PIN)"
+      title="Switch User (4-Digit PIN)"
       maxWidth="480px"
       footer={
         selectedCashier ? (
           <Button variant="outline" onClick={() => { setSelectedCashier(null); setPin(''); }}>
-            ← Choose Different Staff
+            ← Choose Different User
           </Button>
         ) : (
           <Button variant="outline" onClick={onClose}>
@@ -107,12 +107,12 @@ export function CashierSwitchModal({ isOpen, onClose }) {
         {error && <Alert type="error" message={error} />}
 
         {loadingCashiers ? (
-          <div style={{ textAlign: 'center', padding: '24px', color: '#94a3b8' }}>
+          <div style={{ textAlign: 'center', padding: '24px', color: 'var(--color-text-muted)' }}>
             Loading active cashiers...
           </div>
         ) : !selectedCashier ? (
           <div>
-            <label className="section-label">Select Incoming Staff Member</label>
+            <label className="section-label">Select Staff Member to Switch</label>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))', gap: '10px' }}>
               {cashiers.map((c) => {
                 const isCurrent = c.id === currentUser?.id;
@@ -121,8 +121,8 @@ export function CashierSwitchModal({ isOpen, onClose }) {
                     key={c.id}
                     onClick={() => { setSelectedCashier(c); setPin(''); setError(null); }}
                     style={{
-                      background: isCurrent ? 'rgba(59, 130, 246, 0.15)' : '#1e293b',
-                      border: `1px solid ${isCurrent ? '#3b82f6' : '#334155'}`,
+                      background: isCurrent ? 'var(--primary-subtle)' : 'var(--bg-surface-elevated)',
+                      border: `1px solid ${isCurrent ? 'var(--primary)' : 'var(--border-default)'}`,
                       borderRadius: '8px',
                       padding: '12px',
                       cursor: 'pointer',
@@ -133,22 +133,22 @@ export function CashierSwitchModal({ isOpen, onClose }) {
                     }}
                   >
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                      <span style={{ fontWeight: 700, fontSize: '0.92rem', color: '#f8fafc' }}>
+                      <span style={{ fontWeight: 700, fontSize: '0.92rem', color: 'var(--text-primary)' }}>
                         {c.full_name || c.username}
                       </span>
                       {isCurrent && (
-                        <span style={{ fontSize: '0.65rem', background: '#3b82f6', color: '#fff', padding: '2px 6px', borderRadius: '4px', fontWeight: 700 }}>
+                        <span style={{ fontSize: '0.65rem', background: 'var(--primary)', color: 'var(--color-on-primary)', padding: '2px 6px', borderRadius: '4px', fontWeight: 700 }}>
                           ACTIVE
                         </span>
                       )}
                     </div>
-                    <span style={{ fontSize: '0.75rem', color: '#94a3b8' }}>@{c.username}</span>
+                    <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>@{c.username}</span>
                   </div>
                 );
               })}
             </div>
             {cashiers.length === 0 && (
-              <p style={{ textAlign: 'center', color: '#64748b', padding: '16px' }}>
+              <p style={{ textAlign: 'center', color: 'var(--color-text-muted)', padding: '16px' }}>
                 No active cashiers found. Contact your administrator.
               </p>
             )}
@@ -156,8 +156,8 @@ export function CashierSwitchModal({ isOpen, onClose }) {
         ) : (
           <div className="pin-pad-container">
             <div style={{ textAlign: 'center' }}>
-              <span style={{ fontSize: '0.85rem', color: '#94a3b8' }}>Switching to</span>
-              <h4 style={{ fontSize: '1.2rem', color: '#f8fafc' }}>
+              <span style={{ fontSize: '0.85rem', color: 'var(--color-text-muted)' }}>Switching to</span>
+              <h4 style={{ fontSize: '1.2rem', color: 'var(--color-heading)' }}>
                 {selectedCashier.full_name || selectedCashier.username}
               </h4>
             </div>

@@ -74,12 +74,47 @@ function createPinRateLimiter(options = {}) {
   });
 }
 
+/**
+ * Creates general API rate limiter protecting all /api/v1 endpoints against volumetric DoS.
+ * @param {Object} [options]
+ * @returns {import('express').RequestHandler}
+ */
+function createApiRateLimiter(options = {}) {
+  const windowMs = options.windowMs || 60 * 1000;
+  // Generous limit for development/test; 300 req/min for production
+  const max = options.max || (process.env.NODE_ENV === 'production' ? 300 : 5000);
+
+  return rateLimit({
+    windowMs,
+    max,
+    standardHeaders: true,
+    legacyHeaders: false,
+    handler: (req, res) => {
+      const timestamp = new Date().toISOString();
+      const requestId = req.id || null;
+
+      res.status(429).json({
+        success: false,
+        error: {
+          code: 'TOO_MANY_REQUESTS',
+          message: 'API rate limit exceeded. Please throttle your requests.'
+        },
+        meta: { timestamp, requestId }
+      });
+    },
+    ...options
+  });
+}
+
 const defaultLoginRateLimiter = createLoginRateLimiter();
 const defaultPinRateLimiter = createPinRateLimiter();
+const defaultApiRateLimiter = createApiRateLimiter();
 
 module.exports = {
   createLoginRateLimiter,
   loginRateLimiter: defaultLoginRateLimiter,
   createPinRateLimiter,
-  pinRateLimiter: defaultPinRateLimiter
+  pinRateLimiter: defaultPinRateLimiter,
+  createApiRateLimiter,
+  apiRateLimiter: defaultApiRateLimiter
 };

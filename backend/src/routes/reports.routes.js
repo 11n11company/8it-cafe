@@ -35,8 +35,13 @@ function createReportsRouter() {
       const timestamp = new Date().toISOString();
       const requestId = req.id || null;
       try {
-        const { brandId } = req.query;
-        const data = await reportsService.getDashboardSummary(req.tenant.companyId, { brandId });
+        const { brandId, preset, datePreset, startDate, endDate } = req.query;
+        const data = await reportsService.getDashboardSummary(req.tenant.companyId, {
+          brandId,
+          preset: preset || datePreset,
+          startDate,
+          endDate
+        });
         return res.status(200).json({ success: true, data, meta: { timestamp, requestId } });
       } catch (err) {
         handleRouteError(err, req, res, next);
@@ -286,13 +291,50 @@ function createReportsRouter() {
       const timestamp = new Date().toISOString();
       const requestId = req.id || null;
       try {
-        const { preset, startDate, endDate } = req.query;
+        const { preset, startDate, endDate, brandId } = req.query;
         const result = await reportsService.getPaymentMethodReport(req.tenant.companyId, {
           preset,
           startDate,
-          endDate
+          endDate,
+          brandId
         });
-        return res.status(200).json({ success: true, summary: result.summary, data: result.methods, period: result.period, meta: { timestamp, requestId, ...result.meta } });
+        return res.status(200).json({
+          success: true,
+          summary: result.summary,
+          data: result.methods,
+          brands: result.brands,
+          brandId: result.brandId,
+          period: result.period,
+          meta: { timestamp, requestId, ...result.meta }
+        });
+      } catch (err) {
+        handleRouteError(err, req, res, next);
+      }
+    }
+  );
+
+  router.get(
+    '/cashier-reconciliation',
+    authenticate,
+    requirePermission('report:view'),
+    async (req, res, next) => {
+      const timestamp = new Date().toISOString();
+      const requestId = req.id || null;
+      try {
+        const { preset, startDate, endDate, cashierId } = req.query;
+        const result = await reportsService.getCashierReconciliationReport(req.tenant.companyId, {
+          preset,
+          startDate,
+          endDate,
+          cashierId
+        });
+        return res.status(200).json({
+          success: true,
+          summary: result.summary,
+          data: result.shifts,
+          period: result.period,
+          meta: { timestamp, requestId, ...result.meta }
+        });
       } catch (err) {
         handleRouteError(err, req, res, next);
       }
@@ -307,11 +349,12 @@ function createReportsRouter() {
       const timestamp = new Date().toISOString();
       const requestId = req.id || null;
       try {
-        const { preset, startDate, endDate, page, limit } = req.query;
+        const { preset, startDate, endDate, brandId, page, limit } = req.query;
         const result = await reportsService.getRefundReport(req.tenant.companyId, {
           preset,
           startDate,
           endDate,
+          brandId,
           page,
           limit
         });

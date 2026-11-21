@@ -4,9 +4,14 @@ import { Modal } from '../common/Modal';
 import { Badge } from '../common/Badge';
 import { Alert } from '../common/Alert';
 import { api } from '../../services/api';
+import { ProductImageUpload } from './ProductImageUpload';
 
-export function ProductCategoryAdmin() {
-  const [activeTab, setActiveTab] = useState('products'); // 'products' or 'categories'
+export function ProductCategoryAdmin({ initialTab = 'products' } = {}) {
+  const [activeTab, setActiveTab] = useState(initialTab);
+
+  useEffect(() => {
+    if (initialTab) setActiveTab(initialTab);
+  }, [initialTab]);
 
   const [brands, setBrands] = useState([]);
   const [categories, setCategories] = useState([]);
@@ -32,6 +37,7 @@ export function ProductCategoryAdmin() {
   const [productForm, setProductForm] = useState({
     brand_id: '',
     category_id: '',
+    item_code: '',
     name: '',
     description: '',
     selling_price: '',
@@ -46,14 +52,22 @@ export function ProductCategoryAdmin() {
   // Load Reference Data
   const loadReferenceData = async () => {
     try {
-      const [bRes, cRes, tRes] = await Promise.all([
-        api.brands.list(),
-        api.categories.list(),
-        api.taxRates.list()
+      const results = await Promise.allSettled([
+        api.brands.list({ includeInactive: true }),
+        api.categories.list({ includeInactive: true }),
+        api.taxRates.list({ includeInactive: true })
       ]);
-      setBrands(bRes?.data || []);
-      setCategories(cRes?.data || []);
-      setTaxRates(tRes?.data || []);
+      const [bRes, cRes, tRes] = results;
+      if (bRes.status === 'fulfilled') setBrands(bRes.value?.data || []);
+      if (cRes.status === 'fulfilled') setCategories(cRes.value?.data || []);
+      if (tRes.status === 'fulfilled') setTaxRates(tRes.value?.data || []);
+
+      const rejected = results.find(r => r.status === 'rejected');
+      if (rejected) {
+        setError(rejected.reason?.message || 'Failed to load some reference data');
+      } else {
+        setError(null);
+      }
     } catch (err) {
       setError(err.message || 'Failed to load reference data');
     }
@@ -87,8 +101,10 @@ export function ProductCategoryAdmin() {
   // CATEGORY ACTIONS
   const handleOpenCreateCategory = () => {
     setEditingCategory(null);
+    const activeBrands = brands.filter(b => (b.isActive !== undefined ? Boolean(b.isActive) : Boolean(b.is_active)));
+    const chosenBrand = activeBrands[0] || brands[0];
     setCategoryForm({
-      brand_id: brands[0]?.id || '',
+      brand_id: chosenBrand?.id || '',
       name: '',
       description: '',
       display_order: categories.length + 1
@@ -99,15 +115,19 @@ export function ProductCategoryAdmin() {
   const handleOpenEditCategory = (cat) => {
     setEditingCategory(cat);
     setCategoryForm({
-      brand_id: cat.brand_id,
+      brand_id: cat.brand_id || cat.brandId,
       name: cat.name,
       description: cat.description || '',
-      display_order: cat.display_order || 1
+      display_order: cat.display_order ?? cat.displayOrder ?? 1
     });
     setCategoryModalOpen(true);
   };
 
   const handleSaveCategory = async () => {
+    if (!categoryForm.brand_id) {
+      alert('Please select a brand for this category');
+      return;
+    }
     if (!categoryForm.name.trim()) {
       alert('Category name is required');
       return;
@@ -116,16 +136,19 @@ export function ProductCategoryAdmin() {
     try {
       if (editingCategory) {
         await api.categories.update(editingCategory.id, {
-          name: categoryForm.name,
-          description: categoryForm.description,
-          display_order: Number(categoryForm.display_order)
+          name: categoryForm.name.trim(),
+          description: categoryForm.description.trim() || null,
+          display_order: Number(categoryForm.display_order),
+          displayOrder: Number(categoryForm.display_order)
         });
       } else {
         await api.categories.create({
           brand_id: categoryForm.brand_id,
-          name: categoryForm.name,
-          description: categoryForm.description,
-          display_order: Number(categoryForm.display_order)
+          brandId: categoryForm.brand_id,
+          name: categoryForm.name.trim(),
+          description: categoryForm.description.trim() || null,
+          display_order: Number(categoryForm.display_order),
+          displayOrder: Number(categoryForm.display_order)
         });
       }
       setCategoryModalOpen(false);
@@ -138,24 +161,38 @@ export function ProductCategoryAdmin() {
   };
 
   const handleToggleCategoryStatus = async (cat) => {
-    const nextStatus = !cat.is_active;
-    if (!window.confirm(`${nextStatus ? 'Activate' : 'Deactivate'} category "${cat.name}"?`)) return;
+    const currentActive = cat.isActive !== undefined ? Boolean(cat.isActive) : Boolean(cat.is_active);
+    const nextStatus = !currentActive;
     try {
       await api.categories.toggleStatus(cat.id, nextStatus);
-      loadReferenceData();
+      await loadReferenceData();
     } catch (err) {
       alert(err.message || 'Failed to toggle category status');
+    }
+  };
+
+  const handleDeleteCategory = async (cat) => {
+    const confirmed = window.confirm(`Are you sure you want to permanently delete category "${cat.name}"?`);
+    if (!confirmed) return;
+    try {
+      await api.categories.delete(cat.id);
+      await loadReferenceData();
+    } catch (err) {
+      alert(err.message || 'Failed to delete category');
     }
   };
 
   // PRODUCT ACTIONS
   const handleOpenCreateProduct = () => {
     setEditingProduct(null);
-    const defaultBrand = brands[0]?.id || '';
-    const brandCats = categories.filter(c => c.brand_id === defaultBrand);
+    const activeBrands = brands.filter(b => (b.isActive !== undefined ? Boolean(b.isActive) : Boolean(b.is_active)));
+    const chosenBrand = activeBrands[0] || brands[0];
+    const defaultBrand = chosenBrand?.id || '';
+    const brandCats = categories.filter(c => (c.brand_id || c.brandId) === defaultBrand);
     setProductForm({
       brand_id: defaultBrand,
       category_id: brandCats[0]?.id || '',
+      item_code: '',
       name: '',
       description: '',
       selling_price: '',
@@ -170,8 +207,9 @@ export function ProductCategoryAdmin() {
   const handleOpenEditProduct = (prod) => {
     setEditingProduct(prod);
     setProductForm({
-      brand_id: prod.brand_id,
-      category_id: prod.category_id,
+      brand_id: prod.brand_id || prod.brandId,
+      category_id: prod.category_id || prod.categoryId,
+      item_code: prod.item_code || prod.itemCode || prod.sku || '',
       name: prod.name,
       description: prod.description || '',
       selling_price: prod.selling_price,
@@ -184,8 +222,20 @@ export function ProductCategoryAdmin() {
   };
 
   const handleSaveProduct = async () => {
+    if (!productForm.brand_id) {
+      alert('Please select a brand');
+      return;
+    }
+    if (!productForm.category_id) {
+      alert('Please select a category (create a category under this brand first)');
+      return;
+    }
     if (!productForm.name.trim()) {
       alert('Product name is required');
+      return;
+    }
+    if (!productForm.item_code.trim()) {
+      alert('Item Code is required');
       return;
     }
     const priceNum = parseFloat(productForm.selling_price);
@@ -193,73 +243,91 @@ export function ProductCategoryAdmin() {
       alert('Valid selling price is required');
       return;
     }
+    if (!productForm.tax_rate_id) {
+      alert('Please select a tax rate slab');
+      return;
+    }
     setSubmitting(true);
     try {
       if (editingProduct) {
         await api.products.update(editingProduct.id, {
           category_id: productForm.category_id,
-          name: productForm.name,
-          description: productForm.description,
+          categoryId: productForm.category_id,
+          name: productForm.name.trim(),
+          item_code: productForm.item_code.trim(),
+          itemCode: productForm.item_code.trim(),
+          description: productForm.description.trim() || null,
           selling_price: priceNum.toFixed(2),
-          hsn_code: productForm.hsn_code,
+          basePrice: priceNum.toFixed(2),
+          hsn_code: productForm.hsn_code.trim() || '996331',
+          hsnSacCode: productForm.hsn_code.trim() || '996331',
           tax_rate_id: productForm.tax_rate_id,
+          taxRateId: productForm.tax_rate_id,
           is_kitchen_item: Boolean(productForm.is_kitchen_item),
-          image_url: productForm.image_url
+          isKitchenItem: Boolean(productForm.is_kitchen_item),
+          image_url: productForm.image_url.trim() || null,
+          imageUrl: productForm.image_url.trim() || null
         });
       } else {
         await api.products.create({
           brand_id: productForm.brand_id,
+          brandId: productForm.brand_id,
           category_id: productForm.category_id,
-          name: productForm.name,
-          description: productForm.description,
+          categoryId: productForm.category_id,
+          name: productForm.name.trim(),
+          item_code: productForm.item_code.trim(),
+          itemCode: productForm.item_code.trim(),
+          description: productForm.description.trim() || null,
           selling_price: priceNum.toFixed(2),
-          hsn_code: productForm.hsn_code,
+          basePrice: priceNum.toFixed(2),
+          hsn_code: productForm.hsn_code.trim() || '996331',
+          hsnSacCode: productForm.hsn_code.trim() || '996331',
           tax_rate_id: productForm.tax_rate_id,
+          taxRateId: productForm.tax_rate_id,
           is_kitchen_item: Boolean(productForm.is_kitchen_item),
-          image_url: productForm.image_url
+          isKitchenItem: Boolean(productForm.is_kitchen_item),
+          image_url: productForm.image_url.trim() || null,
+          imageUrl: productForm.image_url.trim() || null
         });
       }
       setProductModalOpen(false);
       loadProducts();
     } catch (err) {
-      alert(err.message || 'Failed to save product');
+      if (err.code === 'ITEM_CODE_ALREADY_EXISTS') {
+        alert(err.message || 'Item Code already exists for this company. Please choose a unique code.');
+      } else {
+        alert(err.message || 'Failed to save product');
+      }
     } finally {
       setSubmitting(false);
     }
   };
 
   const handleToggleProductStatus = async (prod) => {
-    const nextStatus = !prod.is_active;
-    if (!window.confirm(`${nextStatus ? 'Activate' : 'Deactivate'} product "${prod.name}"?`)) return;
+    const currentActive = prod.isActive !== undefined ? Boolean(prod.isActive) : Boolean(prod.is_active);
+    const nextStatus = !currentActive;
     try {
       await api.products.toggleStatus(prod.id, nextStatus);
-      loadProducts();
+      await loadProducts();
     } catch (err) {
       alert(err.message || 'Failed to toggle product status');
+    }
+  };
+
+  const handleDeleteProduct = async (prod) => {
+    const confirmed = window.confirm(`Are you sure you want to permanently delete product "${prod.name}"?`);
+    if (!confirmed) return;
+    try {
+      await api.products.delete(prod.id);
+      await loadProducts();
+    } catch (err) {
+      alert(err.message || 'Failed to delete product');
     }
   };
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
       {error && <Alert type="error" message={error} />}
-
-      {/* Tabs */}
-      <div style={{ display: 'flex', gap: '8px', borderBottom: '1px solid #334155', paddingBottom: '8px' }}>
-        <Button
-          variant={activeTab === 'products' ? 'primary' : 'outline'}
-          size="sm"
-          onClick={() => setActiveTab('products')}
-        >
-          📦 Products ({products.length})
-        </Button>
-        <Button
-          variant={activeTab === 'categories' ? 'primary' : 'outline'}
-          size="sm"
-          onClick={() => setActiveTab('categories')}
-        >
-          🏷️ Categories ({categories.length})
-        </Button>
-      </div>
 
       {/* =====================================================================
           TAB 1: PRODUCTS LIST
@@ -296,7 +364,7 @@ export function ProductCategoryAdmin() {
               >
                 <option value="">All Categories</option>
                 {categories
-                  .filter(c => !filterBrandId || c.brand_id === filterBrandId)
+                  .filter(c => !filterBrandId || (c.brand_id || c.brandId) === filterBrandId)
                   .map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
               </select>
             </div>
@@ -312,7 +380,7 @@ export function ProductCategoryAdmin() {
               <thead>
                 <tr>
                   <th>Product</th>
-                  <th>SKU</th>
+                  <th>ITEM CODE</th>
                   <th>Brand</th>
                   <th>Category</th>
                   <th className="text-right">Selling Price</th>
@@ -324,17 +392,17 @@ export function ProductCategoryAdmin() {
               </thead>
               <tbody>
                 {loading ? (
-                  <tr><td colSpan="9" style={{ textAlign: 'center', padding: '24px', color: '#94a3b8' }}>Loading products...</td></tr>
+                  <tr><td colSpan="9" style={{ textAlign: 'center', padding: '24px', color: 'var(--color-text-muted)' }}>Loading products...</td></tr>
                 ) : products.length === 0 ? (
-                  <tr><td colSpan="9" style={{ textAlign: 'center', padding: '24px', color: '#64748b' }}>No products found.</td></tr>
+                  <tr><td colSpan="9" style={{ textAlign: 'center', padding: '24px', color: 'var(--color-text-muted)' }}>No products found.</td></tr>
                 ) : (
                   products.map((p) => (
                     <tr key={p.id}>
                       <td className="font-bold">{p.name}</td>
-                      <td className="mono text-xs">{p.sku}</td>
+                      <td className="mono text-xs font-bold">{p.item_code || p.sku}</td>
                       <td><span className="product-brand-tag">{p.brand_name}</span></td>
                       <td className="text-sm">{p.category_name || '—'}</td>
-                      <td className="text-right mono font-bold" style={{ color: '#10b981' }}>
+                      <td className="text-right mono font-bold" style={{ color: 'var(--color-success)' }}>
                         ₹{Number(p.selling_price).toFixed(2)}
                       </td>
                       <td className="text-xs text-secondary mono">
@@ -342,13 +410,13 @@ export function ProductCategoryAdmin() {
                       </td>
                       <td>
                         {p.is_kitchen_item ? (
-                          <span style={{ color: '#f59e0b', fontSize: '0.8rem', fontWeight: 600 }}>🍳 KOT</span>
+                          <span className="ui-badge ui-badge--warning">Kitchen</span>
                         ) : (
-                          <span style={{ color: '#64748b', fontSize: '0.8rem' }}>Direct Retail</span>
+                          <span className="ui-badge ui-badge--ghost">Retail</span>
                         )}
                       </td>
                       <td>
-                        <Badge status={p.is_active ? 'ACTIVE' : 'INACTIVE'} />
+                        <Badge status={(p.isActive !== undefined ? p.isActive : p.is_active) ? 'ACTIVE' : 'INACTIVE'} />
                       </td>
                       <td style={{ textAlign: 'right' }}>
                         <div style={{ display: 'inline-flex', gap: '6px' }}>
@@ -356,11 +424,24 @@ export function ProductCategoryAdmin() {
                             Edit
                           </Button>
                           <Button
-                            variant={p.is_active ? 'danger' : 'success'}
+                            variant={(p.isActive !== undefined ? p.isActive : p.is_active) ? 'danger' : 'success'}
                             size="sm"
                             onClick={() => handleToggleProductStatus(p)}
                           >
-                            {p.is_active ? 'Deactivate' : 'Activate'}
+                            {(p.isActive !== undefined ? p.isActive : p.is_active) ? 'Deactivate' : 'Activate'}
+                          </Button>
+                          <Button
+                            variant="danger"
+                            size="sm"
+                            onClick={() => handleDeleteProduct(p)}
+                            style={{
+                              background: '#FEE2E2',
+                              color: '#DC2626',
+                              border: '1px solid #FECACA'
+                            }}
+                            title={`Delete product ${p.name}`}
+                          >
+                            Delete
                           </Button>
                         </div>
                       </td>
@@ -380,7 +461,7 @@ export function ProductCategoryAdmin() {
         <div>
           <div className="admin-toolbar">
             <div>
-              <h3 style={{ fontSize: '1.1rem', color: '#f8fafc' }}>Product Categories</h3>
+              <h3 style={{ fontSize: '1.1rem', color: 'var(--color-heading)' }}>Product Categories</h3>
               <p className="text-xs text-muted">Categories organize your POS menu grid and reports</p>
             </div>
             <Button variant="primary" size="sm" onClick={handleOpenCreateCategory}>
@@ -404,21 +485,44 @@ export function ProductCategoryAdmin() {
                 {categories.map((c) => (
                   <tr key={c.id}>
                     <td className="font-bold">{c.name}</td>
-                    <td><span className="product-brand-tag">{c.brand_name}</span></td>
+                    <td>
+                      {(() => {
+                        const bName = c.brand_name || c.brandName || brands.find(b => b.id === (c.brand_id || c.brandId))?.name || '—';
+                        const bClass = String(bName).toLowerCase().includes('seri') ? 'brand-seris' : 'brand-8it';
+                        return (
+                          <span className={`product-brand-tag ${bClass}`}>
+                            {bName}
+                          </span>
+                        );
+                      })()}
+                    </td>
                     <td className="text-secondary text-sm">{c.description || '—'}</td>
-                    <td>{c.display_order}</td>
-                    <td><Badge status={c.is_active ? 'ACTIVE' : 'INACTIVE'} /></td>
+                    <td>{c.displayOrder !== undefined ? c.displayOrder : c.display_order}</td>
+                    <td><Badge status={(c.isActive !== undefined ? c.isActive : c.is_active) ? 'ACTIVE' : 'INACTIVE'} /></td>
                     <td style={{ textAlign: 'right' }}>
                       <div style={{ display: 'inline-flex', gap: '6px' }}>
                         <Button variant="outline" size="sm" onClick={() => handleOpenEditCategory(c)}>
                           Edit
                         </Button>
                         <Button
-                          variant={c.is_active ? 'danger' : 'success'}
+                          variant={(c.isActive !== undefined ? c.isActive : c.is_active) ? 'danger' : 'success'}
                           size="sm"
                           onClick={() => handleToggleCategoryStatus(c)}
                         >
-                          {c.is_active ? 'Deactivate' : 'Activate'}
+                          {(c.isActive !== undefined ? c.isActive : c.is_active) ? 'Deactivate' : 'Activate'}
+                        </Button>
+                        <Button
+                          variant="danger"
+                          size="sm"
+                          onClick={() => handleDeleteCategory(c)}
+                          style={{
+                            background: '#FEE2E2',
+                            color: '#DC2626',
+                            border: '1px solid #FECACA'
+                          }}
+                          title={`Delete category ${c.name}`}
+                        >
+                          Delete
                         </Button>
                       </div>
                     </td>
@@ -454,7 +558,11 @@ export function ProductCategoryAdmin() {
                   value={categoryForm.brand_id}
                   onChange={(e) => setCategoryForm({ ...categoryForm, brand_id: e.target.value })}
                 >
-                  {brands.map(b => <option key={b.id} value={b.id}>{b.name} ({b.code})</option>)}
+                  {brands.length === 0 ? (
+                    <option value="">No brands found (Create a brand first in Company & Brands)</option>
+                  ) : (
+                    brands.map(b => <option key={b.id} value={b.id}>{b.name} ({b.code}){(b.isActive !== undefined ? b.isActive : b.is_active) ? '' : ' [INACTIVE]'}</option>)
+                  )}
                 </select>
               </div>
             )}
@@ -519,7 +627,7 @@ export function ProductCategoryAdmin() {
                     value={productForm.brand_id}
                     onChange={(e) => {
                       const bId = e.target.value;
-                      const bCats = categories.filter(c => c.brand_id === bId);
+                      const bCats = categories.filter(c => (c.brand_id || c.brandId) === bId);
                       setProductForm({
                         ...productForm,
                         brand_id: bId,
@@ -527,7 +635,15 @@ export function ProductCategoryAdmin() {
                       });
                     }}
                   >
-                    {brands.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
+                    {brands.length === 0 ? (
+                      <option value="">No brands available</option>
+                    ) : (
+                      brands.map(b => (
+                        <option key={b.id} value={b.id}>
+                          {b.name} ({b.code}){(b.isActive !== undefined ? b.isActive : b.is_active) ? '' : ' [INACTIVE]'}
+                        </option>
+                      ))
+                    )}
                   </select>
                 </div>
 
@@ -538,9 +654,13 @@ export function ProductCategoryAdmin() {
                     value={productForm.category_id}
                     onChange={(e) => setProductForm({ ...productForm, category_id: e.target.value })}
                   >
-                    {categories
-                      .filter(c => c.brand_id === productForm.brand_id)
-                      .map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                    {categories.filter(c => (c.brand_id || c.brandId) === productForm.brand_id).length === 0 ? (
+                      <option value="">No categories under this brand (Create one first)</option>
+                    ) : (
+                      categories
+                        .filter(c => (c.brand_id || c.brandId) === productForm.brand_id)
+                        .map(c => <option key={c.id} value={c.id}>{c.name}</option>)
+                    )}
                   </select>
                 </div>
               </div>
@@ -552,9 +672,13 @@ export function ProductCategoryAdmin() {
                   value={productForm.category_id}
                   onChange={(e) => setProductForm({ ...productForm, category_id: e.target.value })}
                 >
-                  {categories
-                    .filter(c => c.brand_id === productForm.brand_id)
-                    .map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                  {categories.filter(c => (c.brand_id || c.brandId) === productForm.brand_id).length === 0 ? (
+                    <option value="">No categories under this brand</option>
+                  ) : (
+                    categories
+                      .filter(c => (c.brand_id || c.brandId) === productForm.brand_id)
+                      .map(c => <option key={c.id} value={c.id}>{c.name}</option>)
+                  )}
                 </select>
               </div>
             )}
@@ -569,6 +693,20 @@ export function ProductCategoryAdmin() {
                 onChange={(e) => setProductForm({ ...productForm, name: e.target.value })}
                 autoFocus
               />
+            </div>
+
+            <div className="form-group">
+              <label className="form-label">Item Code *</label>
+              <input
+                type="text"
+                className="form-control"
+                placeholder="e.g. ESP-001, BRW-002"
+                value={productForm.item_code}
+                onChange={(e) => setProductForm({ ...productForm, item_code: e.target.value })}
+              />
+              <span className="text-xs text-muted" style={{ display: 'block', marginTop: '2px' }}>
+                Unique item code across the company used by Cashier and Waiter to search and order.
+              </span>
             </div>
 
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
@@ -592,11 +730,15 @@ export function ProductCategoryAdmin() {
                   value={productForm.tax_rate_id}
                   onChange={(e) => setProductForm({ ...productForm, tax_rate_id: e.target.value })}
                 >
-                  {taxRates.map(tr => (
-                    <option key={tr.id} value={tr.id}>
-                      {tr.name} ({tr.rate_percentage}%)
-                    </option>
-                  ))}
+                  {taxRates.length === 0 ? (
+                    <option value="">No tax slabs found</option>
+                  ) : (
+                    taxRates.map(tr => (
+                      <option key={tr.id} value={tr.id}>
+                        {tr.name} ({tr.rate_percentage}%)
+                      </option>
+                    ))
+                  )}
                 </select>
               </div>
             </div>
@@ -613,16 +755,14 @@ export function ProductCategoryAdmin() {
                 />
               </div>
 
-              <div className="form-group">
-                <label className="form-label">Image URL (Optional)</label>
-                <input
-                  type="text"
-                  className="form-control"
-                  placeholder="https://..."
-                  value={productForm.image_url}
-                  onChange={(e) => setProductForm({ ...productForm, image_url: e.target.value })}
-                />
-              </div>
+            </div>
+
+            <div className="form-group">
+              <label className="form-label">Product photo (optional)</label>
+              <ProductImageUpload
+                value={productForm.image_url}
+                onChange={(url) => setProductForm((prev) => ({ ...prev, image_url: url }))}
+              />
             </div>
 
             <div className="form-group" style={{ flexDirection: 'row', alignItems: 'center', gap: '8px', marginTop: '6px' }}>
@@ -633,7 +773,7 @@ export function ProductCategoryAdmin() {
                 onChange={(e) => setProductForm({ ...productForm, is_kitchen_item: e.target.checked })}
                 style={{ width: '18px', height: '18px', cursor: 'pointer' }}
               />
-              <label htmlFor="kitchenCheck" style={{ fontSize: '0.88rem', color: '#f8fafc', cursor: 'pointer' }}>
+              <label htmlFor="kitchenCheck" style={{ fontSize: '0.88rem', color: 'var(--text-primary)', cursor: 'pointer' }}>
                 🍳 Kitchen Item (Generates KOT for preparation)
               </label>
             </div>

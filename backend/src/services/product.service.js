@@ -18,6 +18,8 @@ const DECIMAL_REGEX = /^\d+(\.\d{1,2})?$/;
 function isValidImageUrl(url) {
   if (url === null || url === undefined || url === '') return true;
   if (typeof url !== 'string' || url.length > 500) return false;
+  // Images uploaded through /api/v1/media are stored as server-relative paths
+  if (/^\/api\/v1\/media\/product-images\/[a-f0-9]{32}\.(jpg|png|webp)$/.test(url)) return true;
   try {
     const parsed = new URL(url);
     return parsed.protocol === 'http:' || parsed.protocol === 'https:';
@@ -70,21 +72,29 @@ function validateNumericPrice(val, fieldName, required = true) {
  */
 function mapProductRowToDto(row) {
   if (!row) return null;
+  const formattedBasePrice = Number(row.base_price).toFixed(2);
   return {
     id: row.id,
     companyId: row.company_id,
+    company_id: row.company_id,
     brandId: row.brand_id,
+    brand_id: row.brand_id,
     brand: row.brand_name ? {
       id: row.brand_id,
       name: row.brand_name,
       code: row.brand_code
     } : undefined,
+    brand_name: row.brand_name || undefined,
+    brand_code: row.brand_code || undefined,
     categoryId: row.category_id,
+    category_id: row.category_id,
     category: row.category_name ? {
       id: row.category_id,
       name: row.category_name
     } : undefined,
+    category_name: row.category_name || undefined,
     taxRateId: row.tax_rate_id,
+    tax_rate_id: row.tax_rate_id,
     taxRate: row.tax_rate_name ? {
       id: row.tax_rate_id,
       name: row.tax_rate_name,
@@ -96,14 +106,24 @@ function mapProductRowToDto(row) {
     } : undefined,
     name: row.name,
     sku: row.sku,
+    itemCode: row.sku,
+    item_code: row.sku,
     description: row.description || null,
     hsnSacCode: row.hsn_sac_code,
-    basePrice: Number(row.base_price).toFixed(2),
+    hsn_code: row.hsn_sac_code,
+    basePrice: formattedBasePrice,
+    base_price: formattedBasePrice,
+    selling_price: formattedBasePrice,
     costPrice: row.cost_price !== null && row.cost_price !== undefined ? Number(row.cost_price).toFixed(2) : null,
+    cost_price: row.cost_price !== null && row.cost_price !== undefined ? Number(row.cost_price).toFixed(2) : null,
     isTaxInclusive: row.is_tax_inclusive,
+    is_tax_inclusive: row.is_tax_inclusive,
     isKitchenItem: row.is_kitchen_item,
+    is_kitchen_item: row.is_kitchen_item,
     imageUrl: row.image_url || null,
+    image_url: row.image_url || null,
     isActive: row.is_active,
+    is_active: row.is_active,
     createdAt: row.created_at,
     updatedAt: row.updated_at
   };
@@ -193,6 +213,22 @@ async function listProducts(companyId, filters = {}, dbPool = pool) {
   const total = countRes.rows[0].total;
   const totalPages = Math.ceil(total / validLimit) || 1;
 
+  const dataParams = [...params];
+  let orderByClause = 'ORDER BY p.name ASC, p.id ASC';
+
+  if (search && typeof search === 'string' && search.trim()) {
+    const exactParamIdx = paramIdx++;
+    dataParams.push(search.trim().toLowerCase());
+    orderByClause = `
+      ORDER BY
+        CASE WHEN LOWER(p.sku) = $${exactParamIdx} THEN 0
+             WHEN LOWER(p.name) = $${exactParamIdx} THEN 1
+             WHEN LOWER(p.sku) LIKE $${exactParamIdx} || '%' THEN 2
+             ELSE 3 END,
+        p.name ASC, p.id ASC
+    `;
+  }
+
   // Query products with pagination
   const dataQuery = `
     SELECT p.id, p.company_id, p.brand_id, p.category_id, p.tax_rate_id,
@@ -208,11 +244,11 @@ async function listProducts(companyId, filters = {}, dbPool = pool) {
     JOIN categories c ON p.category_id = c.id
     JOIN tax_rates t ON p.tax_rate_id = t.id
     WHERE ${whereSql}
-    ORDER BY p.name ASC, p.id ASC
+    ${orderByClause}
     LIMIT $${paramIdx++} OFFSET $${paramIdx++};
   `;
 
-  const dataParams = [...params, validLimit, offset];
+  dataParams.push(validLimit, offset);
   const dataRes = await dbPool.query(dataQuery, dataParams);
 
   return {
@@ -278,27 +314,39 @@ async function getProductById(companyId, productId, dbPool = pool) {
  * @returns {Promise<Object>}
  */
 async function createProduct(companyId, productData = {}, requestingUserId, clientContext = {}, dbPool = pool) {
-  // 1. Enforce SKU policy: reject client-supplied SKU
-  if (productData.sku !== undefined && productData.sku !== null) {
+  const rawItemCode = productData.item_code !== undefined
+    ? productData.item_code
+    : (productData.itemCode !== undefined ? productData.itemCode : undefined);
+
+  // 1. Enforce SKU policy: reject client-supplied legacy SKU if item_code is not used
+  if (rawItemCode === undefined && productData.sku !== undefined && productData.sku !== null) {
     const err = new Error('SKU is automatically generated and cannot be provided by the client');
     err.statusCode = 400;
     err.code = 'CLIENT_SKU_NOT_ALLOWED';
     throw err;
   }
 
-  const {
-    name,
-    brandId,
-    categoryId,
-    taxRateId,
-    description = null,
-    hsnSacCode = '996331',
-    basePrice,
-    costPrice = null,
-    isTaxInclusive = true,
-    isKitchenItem = false,
-    imageUrl = null
-  } = productData;
+  const brandId = productData.brandId || productData.brand_id;
+  const categoryId = productData.categoryId || productData.category_id;
+  const taxRateId = productData.taxRateId || productData.tax_rate_id;
+  const name = productData.name;
+  const description = productData.description !== undefined ? productData.description : null;
+  const hsnSacCode = productData.hsnSacCode || productData.hsn_code || '996331';
+  const basePrice = productData.basePrice !== undefined
+    ? productData.basePrice
+    : (productData.selling_price !== undefined ? productData.selling_price : productData.price);
+  const costPrice = productData.costPrice !== undefined
+    ? productData.costPrice
+    : (productData.cost_price !== undefined ? productData.cost_price : null);
+  const isTaxInclusive = productData.isTaxInclusive !== undefined
+    ? productData.isTaxInclusive
+    : (productData.is_tax_inclusive !== undefined ? productData.is_tax_inclusive : true);
+  const isKitchenItem = productData.isKitchenItem !== undefined
+    ? productData.isKitchenItem
+    : (productData.is_kitchen_item !== undefined ? productData.is_kitchen_item : false);
+  const imageUrl = productData.imageUrl !== undefined
+    ? productData.imageUrl
+    : (productData.image_url !== undefined ? productData.image_url : null);
 
   const { ipAddress = null, userAgent = null } = clientContext;
 
@@ -419,11 +467,38 @@ async function createProduct(companyId, productData = {}, requestingUserId, clie
       throw err;
     }
 
-    // 6. Atomically generate concurrency-safe sequence-backed SKU
-    const skuSeqRes = await client.query(`
-      SELECT 'PRD-' || LPAD(nextval('product_sku_seq')::TEXT, 8, '0') AS generated_sku;
-    `);
-    const generatedSku = skuSeqRes.rows[0].generated_sku;
+    // 6. Resolve manual Item Code or sequence fallback
+    let finalSku;
+    if (rawItemCode !== undefined && rawItemCode !== null) {
+      if (typeof rawItemCode !== 'string' || !rawItemCode.trim()) {
+        const err = new Error('Item code is required');
+        err.statusCode = 400;
+        err.code = 'VALIDATION_FAILED';
+        throw err;
+      }
+      const cleanItemCode = rawItemCode.trim().slice(0, 50);
+
+      // Check case-insensitive uniqueness across the entire company (not just within a brand)
+      const dupCheck = await client.query(`
+        SELECT id, name FROM products
+        WHERE company_id = $1 AND LOWER(sku) = LOWER($2);
+      `, [companyId, cleanItemCode]);
+
+      if (dupCheck.rowCount > 0) {
+        const err = new Error(`Item code "${cleanItemCode}" already exists for this company`);
+        err.statusCode = 409;
+        err.code = 'ITEM_CODE_ALREADY_EXISTS';
+        throw err;
+      }
+
+      finalSku = cleanItemCode;
+    } else {
+      // Concurrency-safe sequence-backed SKU for legacy callers
+      const skuSeqRes = await client.query(`
+        SELECT 'PRD-' || LPAD(nextval('product_sku_seq')::TEXT, 8, '0') AS generated_sku;
+      `);
+      finalSku = skuSeqRes.rows[0].generated_sku;
+    }
 
     // 7. Insert product record
     const insertRes = await client.query(`
@@ -442,7 +517,7 @@ async function createProduct(companyId, productData = {}, requestingUserId, clie
                 created_at, updated_at;
     `, [
       companyId, brandId, categoryId, taxRateId,
-      cleanName, generatedSku, cleanDescription, cleanHsnSac, cleanBasePrice, cleanCostPrice,
+      cleanName, finalSku, cleanDescription, cleanHsnSac, cleanBasePrice, cleanCostPrice,
       cleanIsTaxInclusive, cleanIsKitchenItem, cleanImageUrl
     ]);
 
@@ -506,27 +581,31 @@ async function updateProduct(companyId, productId, updateData = {}, requestingUs
     throw err;
   }
 
-  // Enforce SKU immutability
-  if (updateData.sku !== undefined && updateData.sku !== null) {
+  const rawItemCode = updateData.item_code !== undefined
+    ? updateData.item_code
+    : (updateData.itemCode !== undefined ? updateData.itemCode : undefined);
+
+  // Enforce legacy SKU immutability if caller attempts to tamper with 'sku' without 'item_code'
+  if (rawItemCode === undefined && updateData.sku !== undefined && updateData.sku !== null) {
     const err = new Error('SKU is automatically generated and cannot be modified');
     err.statusCode = 400;
     err.code = 'SKU_IMMUTABLE';
     throw err;
   }
 
-  const {
-    name,
-    brandId,
-    categoryId,
-    taxRateId,
-    description,
-    hsnSacCode,
-    basePrice,
-    costPrice,
-    isTaxInclusive,
-    isKitchenItem,
-    imageUrl
-  } = updateData;
+  const name = updateData.name;
+  const brandId = updateData.brandId || updateData.brand_id;
+  const categoryId = updateData.categoryId || updateData.category_id;
+  const taxRateId = updateData.taxRateId || updateData.tax_rate_id;
+  const description = updateData.description;
+  const hsnSacCode = updateData.hsnSacCode !== undefined ? updateData.hsnSacCode : updateData.hsn_code;
+  const basePrice = updateData.basePrice !== undefined
+    ? updateData.basePrice
+    : (updateData.selling_price !== undefined ? updateData.selling_price : updateData.price);
+  const costPrice = updateData.costPrice !== undefined ? updateData.costPrice : updateData.cost_price;
+  const isTaxInclusive = updateData.isTaxInclusive !== undefined ? updateData.isTaxInclusive : updateData.is_tax_inclusive;
+  const isKitchenItem = updateData.isKitchenItem !== undefined ? updateData.isKitchenItem : updateData.is_kitchen_item;
+  const imageUrl = updateData.imageUrl !== undefined ? updateData.imageUrl : updateData.image_url;
 
   const { ipAddress = null, userAgent = null } = clientContext;
 
@@ -696,6 +775,32 @@ async function updateProduct(companyId, productId, updateData = {}, requestingUs
       cleanImageUrl = imageUrl && typeof imageUrl === 'string' ? imageUrl.trim() : null;
     }
 
+    let cleanSku = current.sku;
+    if (rawItemCode !== undefined && rawItemCode !== null) {
+      if (typeof rawItemCode !== 'string' || !rawItemCode.trim()) {
+        const err = new Error('Item code cannot be empty');
+        err.statusCode = 400;
+        err.code = 'VALIDATION_FAILED';
+        throw err;
+      }
+      const candidateCode = rawItemCode.trim().slice(0, 50);
+
+      // Check case-insensitive uniqueness across the company excluding this product
+      const dupCheck = await client.query(`
+        SELECT id, name FROM products
+        WHERE company_id = $1 AND LOWER(sku) = LOWER($2) AND id != $3;
+      `, [companyId, candidateCode, productId]);
+
+      if (dupCheck.rowCount > 0) {
+        const err = new Error(`Item code "${candidateCode}" is already in use by another product`);
+        err.statusCode = 409;
+        err.code = 'ITEM_CODE_ALREADY_EXISTS';
+        throw err;
+      }
+
+      cleanSku = candidateCode;
+    }
+
     const updateRes = await client.query(`
       UPDATE products
       SET name = $1,
@@ -708,8 +813,9 @@ async function updateProduct(companyId, productId, updateData = {}, requestingUs
           is_tax_inclusive = $8,
           is_kitchen_item = $9,
           image_url = $10,
+          sku = $11,
           updated_at = CURRENT_TIMESTAMP
-      WHERE id = $11 AND company_id = $12
+      WHERE id = $12 AND company_id = $13
       RETURNING id, company_id, brand_id, category_id, tax_rate_id,
                 name, sku, description, hsn_sac_code, base_price, cost_price,
                 is_tax_inclusive, is_kitchen_item, image_url, is_active,
@@ -717,6 +823,7 @@ async function updateProduct(companyId, productId, updateData = {}, requestingUs
     `, [
       cleanName, cleanCategoryId, cleanTaxRateId, cleanDescription, cleanHsnSac,
       cleanBasePrice, cleanCostPrice, cleanIsTaxInclusive, cleanIsKitchenItem, cleanImageUrl,
+      cleanSku,
       productId, companyId
     ]);
 
@@ -859,12 +966,112 @@ async function updateProductStatus(companyId, productId, isActive, requestingUse
   }
 }
 
+/**
+ * Deletes product with dependency guards and transactional audit logging.
+ * Rejects deletion if product is referenced in invoice_items or active table orders.
+ * @param {string} companyId Authenticated tenant company UUID
+ * @param {string} productId Target product UUID
+ * @param {string} requestingUserId User triggering delete
+ * @param {Object} [auditMetadata]
+ * @param {import('pg').Pool} [dbPool]
+ * @returns {Promise<Object>}
+ */
+async function deleteProduct(companyId, productId, requestingUserId, auditMetadata = {}, dbPool = pool) {
+  if (!productId || !UUID_REGEX.test(productId)) {
+    const err = new Error('productId must be a valid UUID');
+    err.statusCode = 400;
+    err.code = 'VALIDATION_FAILED';
+    throw err;
+  }
+
+  const { ipAddress = null, userAgent = null } = auditMetadata;
+  const client = await dbPool.connect();
+
+  try {
+    await client.query('BEGIN;');
+
+    const lockRes = await client.query(`
+      SELECT p.id, p.name, p.sku, p.is_active, b.name AS brand_name, c.name AS category_name
+      FROM products p
+      JOIN brands b ON p.brand_id = b.id
+      JOIN categories c ON p.category_id = c.id
+      WHERE p.id = $1 AND p.company_id = $2
+      FOR UPDATE;
+    `, [productId, companyId]);
+
+    if (lockRes.rowCount === 0) {
+      const err = new Error('Product not found');
+      err.statusCode = 404;
+      err.code = 'PRODUCT_NOT_FOUND';
+      throw err;
+    }
+
+    const current = lockRes.rows[0];
+
+    // Check if referenced in invoice_items
+    const invoiceItemCheck = await client.query(`
+      SELECT COUNT(*)::int AS count
+      FROM invoice_items
+      WHERE product_id = $1;
+    `, [productId]);
+
+    const invoiceCount = invoiceItemCheck.rows[0]?.count || 0;
+    if (invoiceCount > 0) {
+      const err = new Error(`Cannot delete product "${current.name}". It is recorded in ${invoiceCount} historical invoice(s). You can deactivate it instead.`);
+      err.statusCode = 409;
+      err.code = 'PRODUCT_HAS_INVOICES';
+      throw err;
+    }
+
+    // Check if referenced in active table session items
+    const tableItemCheck = await client.query(`
+      SELECT COUNT(*)::int AS count
+      FROM table_session_items
+      WHERE product_id = $1;
+    `, [productId]);
+
+    const tableItemCount = tableItemCheck.rows[0]?.count || 0;
+    if (tableItemCount > 0) {
+      const err = new Error(`Cannot delete product "${current.name}". It is currently part of an active dining table session.`);
+      err.statusCode = 409;
+      err.code = 'PRODUCT_IN_ACTIVE_SESSION';
+      throw err;
+    }
+
+    await client.query(`
+      DELETE FROM products
+      WHERE id = $1 AND company_id = $2;
+    `, [productId, companyId]);
+
+    await recordAuditEventTx(client, {
+      companyId,
+      userId: requestingUserId,
+      action: 'PRODUCT_DELETE',
+      entityType: 'PRODUCT',
+      entityId: productId,
+      oldValues: { name: current.name, sku: current.sku, brandName: current.brand_name, isActive: current.is_active },
+      newValues: null,
+      ipAddress,
+      userAgent
+    });
+
+    await client.query('COMMIT;');
+    return { id: productId, name: current.name, deleted: true };
+  } catch (err) {
+    await client.query('ROLLBACK;');
+    throw err;
+  } finally {
+    client.release();
+  }
+}
+
 module.exports = {
   listProducts,
   getProductById,
   createProduct,
   updateProduct,
   updateProductStatus,
+  deleteProduct,
   mapProductRowToDto,
   isValidImageUrl,
   validateNumericPrice

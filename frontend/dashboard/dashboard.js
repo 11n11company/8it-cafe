@@ -152,7 +152,7 @@
       const x = padding.left + (d.hour * (plotWidth / 24)) + 2;
       const y = padding.top + plotHeight - barHeight;
 
-      const fill = val > 0 ? '#3b82f6' : '#334155';
+      const fill = val > 0 ? '#174D38' : '#D8C9AA';
       barsSvg += `
         <rect x="${x}" y="${y}" width="${barWidth}" height="${barHeight}" fill="${fill}" rx="2">
           <title>${d.label}: ₹${val.toFixed(2)} (${d.invoiceCount} bills)</title>
@@ -161,19 +161,19 @@
 
       // Labels every 4 hours
       if (d.hour % 4 === 0) {
-        barsSvg += `<text x="${x + barWidth / 2}" y="${height - 10}" fill="#94a3b8" font-size="10" text-anchor="middle">${d.hour}h</text>`;
+        barsSvg += `<text x="${x + barWidth / 2}" y="${height - 10}" fill="#738A7C" font-size="10" text-anchor="middle">${d.hour}h</text>`;
       }
     });
 
     const svg = `
       <svg viewBox="0 0 ${width} ${height}" style="width: 100%; height: 100%; overflow: visible;">
         <!-- Axes -->
-        <line x1="${padding.left}" y1="${padding.top + plotHeight}" x2="${width - padding.right}" y2="${padding.top + plotHeight}" stroke="#334155" stroke-width="1"/>
-        <line x1="${padding.left}" y1="${padding.top}" x2="${padding.left}" y2="${padding.top + plotHeight}" stroke="#334155" stroke-width="1"/>
+        <line x1="${padding.left}" y1="${padding.top + plotHeight}" x2="${width - padding.right}" y2="${padding.top + plotHeight}" stroke="#D8C9AA" stroke-width="1"/>
+        <line x1="${padding.left}" y1="${padding.top}" x2="${padding.left}" y2="${padding.top + plotHeight}" stroke="#D8C9AA" stroke-width="1"/>
 
         <!-- Y Axis Labels -->
-        <text x="${padding.left - 8}" y="${padding.top + 5}" fill="#94a3b8" font-size="10" text-anchor="end">₹${Math.round(maxSales)}</text>
-        <text x="${padding.left - 8}" y="${padding.top + plotHeight}" fill="#94a3b8" font-size="10" text-anchor="end">₹0</text>
+        <text x="${padding.left - 8}" y="${padding.top + 5}" fill="#738A7C" font-size="10" text-anchor="end">₹${Math.round(maxSales)}</text>
+        <text x="${padding.left - 8}" y="${padding.top + plotHeight}" fill="#738A7C" font-size="10" text-anchor="end">₹0</text>
 
         ${barsSvg}
       </svg>
@@ -369,7 +369,8 @@
     loadDashboard();
   });
 
-  // Init
+  // Init & periodic synchronization
   loadBrands();
   loadDashboard();
+  setInterval(loadDashboard, 8000);
 })();

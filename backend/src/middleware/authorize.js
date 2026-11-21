@@ -9,8 +9,9 @@
  * @returns {string}
  */
 function normalizeRole(roleCode) {
-  const upper = String(roleCode).trim().toUpperCase();
+  const upper = String(roleCode).trim().toUpperCase().replace(/\s+/g, '_');
   if (upper === 'MANAGER') return 'STORE_MANAGER';
+  if (upper === 'ADMINISTRATOR') return 'ADMIN';
   return upper;
 }
 
@@ -77,6 +78,16 @@ function requirePermission(...requiredPermissions) {
         },
         meta: { timestamp, requestId }
       });
+    }
+
+    const rawRole = (req.user.role && typeof req.user.role === 'object')
+      ? (req.user.role.code || req.user.role.name)
+      : req.user.role;
+    const userRole = normalizeRole(rawRole);
+
+    // ADMINISTRATOR role possesses full system authority
+    if (userRole === 'ADMIN' || userRole === 'ADMINISTRATOR') {
+      return next();
     }
 
     const userPermissions = req.user.permissions || [];
