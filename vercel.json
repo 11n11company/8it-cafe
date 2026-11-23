@@ -1,0 +1,9 @@
+﻿{
+  "outputDirectory": "frontend/dist",
+  "rewrites": [
+    {
+      "source": "/api/(.*)",
+      "destination": "https://8it-cafe-production.up.railway.app/api/$1"
+    }
+  ]
+}
