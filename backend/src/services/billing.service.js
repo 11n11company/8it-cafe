@@ -11,6 +11,7 @@ const { recordAuditEventTx } = require('./audit.service');
 const { calculateLineTax, resolvePlaceOfSupply } = require('./gst-calculation.service');
 const { stringToPaise, paiseToString, roundDiv } = require('../utils/tax-decimal');
 const { consumeStockForInvoiceTx } = require('./inventory.service');
+const kotService = require('./kot.service');
 
 const ALLOWED_PAYMENT_METHODS = new Set(['CASH', 'UPI', 'CARD', 'OTHER']);
 
@@ -302,6 +303,10 @@ async function createInvoice(companyId, userId, payload, idempotencyKey = null) 
     const tableSessionId = payload.tableSessionId || payload.table_session_id || null;
     const tableNumberSnapshot = payload.tableNumberSnapshot || payload.table_number_snapshot || null;
     const parcelOrderNumber = payload.parcelOrderNumber || payload.parcel_order_number || null;
+    const rawCustomerName = payload.customerName || payload.customer_name;
+    const customerName = typeof rawCustomerName === 'string' && rawCustomerName.trim().length > 0
+      ? rawCustomerName.trim().slice(0, 150)
+      : null;
 
     // 3. Insert into invoices as PENDING
     const invRes = await client.query(
@@ -312,7 +317,8 @@ async function createInvoice(companyId, userId, payload, idempotencyKey = null) 
          subtotal_gross, total_discount_amount, total_taxable_amount,
          total_cgst_amount, total_sgst_amount, total_igst_amount, total_cess_amount,
          rounding_adjustment, grand_total, is_interstate, place_of_supply_state,
-         payment_status, notes, order_type, table_session_id, table_number_snapshot, parcel_order_number
+         payment_status, notes, order_type, table_session_id, table_number_snapshot, parcel_order_number,
+         customer_name
        ) VALUES (
          $1, $2, $3, $4, $5,
          $6, $7, $8,
@@ -320,8 +326,8 @@ async function createInvoice(companyId, userId, payload, idempotencyKey = null) 
          $12, $13, $14,
          $15, $16, $17, $18,
          $19, $20, $21, $22,
-         'PENDING', $23, $24, $25, $26, $27
-       ) RETURNING id, invoice_number, financial_year, payment_status, grand_total, order_type, table_session_id, table_number_snapshot, parcel_order_number, created_at`,
+         'PENDING', $23, $24, $25, $26, $27, $28
+       ) RETURNING id, invoice_number, financial_year, payment_status, grand_total, order_type, table_session_id, table_number_snapshot, parcel_order_number, customer_name, created_at`,
       [
         companyId, userId, invoiceNumber, fy, counterCode,
         companyLegalName, companyTradeName, companyGstin,
@@ -329,7 +335,7 @@ async function createInvoice(companyId, userId, payload, idempotencyKey = null) 
         calculation.subtotalGross, calculation.totalDiscountAmount, calculation.totalTaxableAmount,
         calculation.totalCgstAmount, calculation.totalSgstAmount, calculation.totalIgstAmount, calculation.totalCessAmount,
         calculation.roundingAdjustment, calculation.grandTotal, calculation.isInterstate, calculation.placeOfSupplyStateCode,
-        notes, orderType, tableSessionId, tableNumberSnapshot, parcelOrderNumber
+        notes, orderType, tableSessionId, tableNumberSnapshot, parcelOrderNumber, customerName
       ]
     );
 
@@ -384,12 +390,33 @@ async function createInvoice(companyId, userId, payload, idempotencyKey = null) 
     // 6. Immediate checkout if payment tenders are supplied
     const tenders = payload.tenders || (payload.payment ? [payload.payment] : null);
     if (tenders && Array.isArray(tenders) && tenders.length > 0) {
+      // Revalidate KOT dispatch state immediately before parcel payment completion
+      if (orderType === 'PARCEL' && parcelOrderNumber) {
+        const dispatchCheck = await kotService.verifyParcelKotDispatched(
+          companyId,
+          {
+            parcelOrderNumber,
+            items: calculation.items
+          },
+          client
+        );
+        if (!dispatchCheck.allDispatched) {
+          throw new BillingError(
+            'Kitchen ticket has not been sent. Please send the KOT before completing payment.',
+            'KOT_DISPATCH_REQUIRED',
+            400,
+            { unsentItems: dispatchCheck.unsentItems }
+          );
+        }
+      }
+
       const checkoutResult = await checkoutInvoiceTx(client, {
         companyId,
         userId,
         invoiceId: invoice.id,
         idempotencyKey: idempotencyKey || `auto-${invoice.id}`,
-        tenders
+        tenders,
+        customerName
       });
 
       if (tableSessionId) {
@@ -404,7 +431,27 @@ async function createInvoice(companyId, userId, payload, idempotencyKey = null) 
         );
       }
 
+      if (parcelOrderNumber) {
+        await client.query(
+          `UPDATE kots
+           SET invoice_id = $1
+           WHERE company_id = $2 AND parcel_order_number = $3 AND invoice_id IS NULL`,
+          [invoice.id, companyId, parcelOrderNumber]
+        );
+      }
+
       await client.query('COMMIT');
+
+      // POST-COMMIT: Durable receipt queue dispatch (Finding 9)
+      if (checkoutResult && checkoutResult.outboxId) {
+        try {
+          const { processReceiptOutboxEntry } = require('./printer.service');
+          await processReceiptOutboxEntry(checkoutResult.outboxId);
+        } catch (printErr) {
+          logger.warn(`Post-commit receipt dispatch deferred for outbox entry ${checkoutResult.outboxId}: ${printErr.message}`);
+        }
+      }
+
       return {
         ...invoice,
         payment_status: 'PAID',
@@ -549,7 +596,7 @@ async function updateDraftInvoiceItems(companyId, userId, invoiceId, payload) {
  * Transactional POS Checkout implementation with advisory locks, idempotency,
  * row locks, tender validation, atomic settlement, and DB trigger reconciliation.
  */
-async function checkoutInvoiceTx(client, { companyId, userId, invoiceId, idempotencyKey, tenders }) {
+async function checkoutInvoiceTx(client, { companyId, userId, invoiceId, idempotencyKey, tenders, customerName }) {
   const payloadCanonical = JSON.stringify({ invoiceId, tenders });
   const payloadHash = crypto.createHash('sha256').update(payloadCanonical).digest('hex');
 
@@ -577,9 +624,14 @@ async function checkoutInvoiceTx(client, { companyId, userId, invoiceId, idempot
     };
   }
 
+  const rawCustomerName = customerName;
+  const cleanCustomerName = typeof rawCustomerName === 'string' && rawCustomerName.trim().length > 0
+    ? rawCustomerName.trim().slice(0, 150)
+    : null;
+
   // Row lock on invoice
   const invRes = await client.query(
-    `SELECT id, company_id, invoice_number, payment_status, is_active, grand_total, table_session_id
+    `SELECT id, company_id, invoice_number, payment_status, is_active, grand_total, table_session_id, order_type, parcel_order_number, customer_name
      FROM invoices
      WHERE id = $1 AND company_id = $2
      FOR UPDATE`,
@@ -596,6 +648,33 @@ async function checkoutInvoiceTx(client, { companyId, userId, invoiceId, idempot
   }
   if (invoice.payment_status !== 'PENDING') {
     throw new BillingError(`INVOICE_NOT_PENDING (Current: ${invoice.payment_status})`, 'INVOICE_NOT_PENDING', 400);
+  }
+
+  // Mandatory KOT dispatch safeguard for parcel checkout (Finding: Prevent Parcel Payment Without KOT Dispatch)
+  if (invoice.order_type === 'PARCEL' && invoice.parcel_order_number) {
+    const invItemsRes = await client.query(
+      `SELECT item_name_snapshot, quantity, is_kitchen_item_snapshot
+       FROM invoice_items
+       WHERE invoice_id = $1 AND company_id = $2`,
+      [invoiceId, companyId]
+    );
+    const dispatchCheck = await kotService.verifyParcelKotDispatched(
+      companyId,
+      {
+        parcelOrderNumber: invoice.parcel_order_number,
+        invoiceId,
+        items: invItemsRes.rows
+      },
+      client
+    );
+    if (!dispatchCheck.allDispatched) {
+      throw new BillingError(
+        'Kitchen ticket has not been sent. Please send the KOT before completing payment.',
+        'KOT_DISPATCH_REQUIRED',
+        400,
+        { unsentItems: dispatchCheck.unsentItems }
+      );
+    }
   }
 
   if (!Array.isArray(tenders) || tenders.length === 0) {
@@ -682,13 +761,15 @@ async function checkoutInvoiceTx(client, { companyId, userId, invoiceId, idempot
   }
 
   // Settle invoice to PAID (fires fn_invoices_validate_status_transition)
+  // Preserves existing customer_name if already set, or saves cleanCustomerName if provided
   await client.query(
     `UPDATE invoices
      SET payment_status = 'PAID',
+         customer_name = COALESCE(invoices.customer_name, $3),
          settled_at = clock_timestamp(),
          updated_at = clock_timestamp()
      WHERE id = $1 AND company_id = $2`,
-    [invoiceId, companyId]
+    [invoiceId, companyId, cleanCustomerName]
   );
 
   // If this invoice is associated with an active dining table session, safely close the table session!
@@ -701,6 +782,16 @@ async function checkoutInvoiceTx(client, { companyId, userId, invoiceId, idempot
            updated_at = clock_timestamp()
        WHERE id = $2 AND company_id = $3 AND closed_at IS NULL`,
       [invoiceId, invoice.table_session_id, companyId]
+    );
+  }
+
+  // Link any parcel KOTs to settled invoice
+  if (invoice.parcel_order_number) {
+    await client.query(
+      `UPDATE kots
+       SET invoice_id = $1
+       WHERE company_id = $2 AND parcel_order_number = $3 AND invoice_id IS NULL`,
+      [invoiceId, companyId, invoice.parcel_order_number]
     );
   }
 
@@ -740,6 +831,7 @@ async function checkoutInvoiceTx(client, { companyId, userId, invoiceId, idempot
     invoice_number: invoice.invoice_number,
     payment_status: 'PAID',
     grand_total: invoice.grand_total,
+    customer_name: invoice.customer_name || cleanCustomerName || null,
     payments: paymentRows,
     receipt_outbox_id: outboxId
   };
@@ -781,7 +873,8 @@ async function checkoutInvoice(companyId, userId, invoiceId, payload, idempotenc
       userId,
       invoiceId,
       idempotencyKey,
-      tenders: payload.tenders || [payload]
+      tenders: payload.tenders || (Array.isArray(payload) ? payload : [payload]),
+      customerName: payload.customerName || payload.customer_name
     });
     await client.query('COMMIT');
   } catch (err) {
@@ -885,6 +978,165 @@ async function voidInvoice(companyId, userId, invoiceId, payload) {
       invoiceNumber: inv.invoice_number,
       paymentStatus: 'VOIDED',
       voidReason: reason.trim()
+    };
+  } catch (err) {
+    await client.query('ROLLBACK');
+    throw err;
+  } finally {
+    client.release();
+  }
+}
+
+/**
+ * Soft-deletes an invoice with mandatory reason and immutable audit log.
+ * Strictly preserves historical invoice snapshots, payment records, line items, and financial ledger data.
+ * Does NOT delete associated payment records, does NOT cancel KOTs, does NOT reverse payments automatically.
+ */
+async function deleteInvoice(companyId, userId, invoiceId, payload = {}) {
+  const { reason } = payload;
+  if (!reason || typeof reason !== 'string' || reason.trim().length === 0) {
+    throw new BillingError('Deletion reason is mandatory.', 'DELETE_REASON_REQUIRED', 400);
+  }
+
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+
+    // Row-lock target invoice
+    const invRes = await client.query(
+      `SELECT id, invoice_number, payment_status, grand_total, is_active, is_deleted, created_at
+       FROM invoices
+       WHERE id = $1 AND company_id = $2
+       FOR UPDATE`,
+      [invoiceId, companyId]
+    );
+
+    if (invRes.rows.length === 0) {
+      throw new BillingError('Invoice not found.', 'INVOICE_NOT_FOUND', 404);
+    }
+
+    const inv = invRes.rows[0];
+    if (inv.is_deleted) {
+      throw new BillingError('Invoice is already deleted.', 'INVOICE_ALREADY_DELETED', 400);
+    }
+
+    // Soft delete: flag is_deleted = TRUE, set timestamps and reason, deactivate
+    // All original snapshot columns, items, payments, and sequence numbers remain completely intact.
+    await client.query(
+      `UPDATE invoices
+       SET is_deleted = TRUE,
+           deleted_at = clock_timestamp(),
+           deleted_by_user_id = $1,
+           delete_reason = $2,
+           is_active = FALSE,
+           updated_at = clock_timestamp()
+       WHERE id = $3`,
+      [userId, reason.trim(), invoiceId]
+    );
+
+    // Record audit event
+    await recordAuditEventTx(client, {
+      companyId,
+      userId,
+      action: 'INVOICE_DELETED',
+      entityType: 'INVOICE',
+      entityId: invoiceId,
+      oldValues: {
+        invoice_number: inv.invoice_number,
+        grand_total: inv.grand_total,
+        payment_status: inv.payment_status,
+        is_deleted: false
+      },
+      newValues: {
+        invoice_number: inv.invoice_number,
+        grand_total: inv.grand_total,
+        payment_status: inv.payment_status,
+        is_deleted: true,
+        delete_reason: reason.trim(),
+        deleted_by_user_id: userId,
+        deleted_at: new Date().toISOString()
+      }
+    });
+
+    await client.query('COMMIT');
+    return {
+      success: true,
+      invoiceId,
+      invoiceNumber: inv.invoice_number,
+      grandTotal: inv.grand_total,
+      isDeleted: true,
+      deleteReason: reason.trim(),
+      deletedAt: new Date().toISOString()
+    };
+  } catch (err) {
+    await client.query('ROLLBACK');
+    throw err;
+  } finally {
+    client.release();
+  }
+}
+
+/**
+ * Restores a previously soft-deleted invoice (Authorized Admin recovery path).
+ */
+async function restoreInvoice(companyId, userId, invoiceId, payload = {}) {
+  const { reason } = payload;
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+
+    const invRes = await client.query(
+      `SELECT id, invoice_number, payment_status, grand_total, is_active, is_deleted, created_at
+       FROM invoices
+       WHERE id = $1 AND company_id = $2
+       FOR UPDATE`,
+      [invoiceId, companyId]
+    );
+
+    if (invRes.rows.length === 0) {
+      throw new BillingError('Invoice not found.', 'INVOICE_NOT_FOUND', 404);
+    }
+
+    const inv = invRes.rows[0];
+    if (!inv.is_deleted) {
+      throw new BillingError('Invoice is not deleted.', 'INVOICE_NOT_DELETED', 400);
+    }
+
+    await client.query(
+      `UPDATE invoices
+       SET is_deleted = FALSE,
+           deleted_at = NULL,
+           deleted_by_user_id = NULL,
+           delete_reason = NULL,
+           is_active = TRUE,
+           updated_at = clock_timestamp()
+       WHERE id = $1`,
+      [invoiceId]
+    );
+
+    await recordAuditEventTx(client, {
+      companyId,
+      userId,
+      action: 'INVOICE_RESTORED',
+      entityType: 'INVOICE',
+      entityId: invoiceId,
+      oldValues: {
+        invoice_number: inv.invoice_number,
+        is_deleted: true
+      },
+      newValues: {
+        invoice_number: inv.invoice_number,
+        is_deleted: false,
+        restoration_reason: (reason || '').trim() || 'Admin manual restoration'
+      }
+    });
+
+    await client.query('COMMIT');
+    return {
+      success: true,
+      invoiceId,
+      invoiceNumber: inv.invoice_number,
+      isDeleted: false
     };
   } catch (err) {
     await client.query('ROLLBACK');
@@ -1129,9 +1381,18 @@ async function listInvoices(companyId, query = {}) {
   let idx = 2;
 
   const targetStatus = paymentStatus || status;
-  if (targetStatus) {
-    conditions.push(`i.payment_status = $${idx++}`);
-    values.push(targetStatus);
+  if (targetStatus === 'DELETED') {
+    conditions.push('i.is_deleted = TRUE');
+  } else if (query.isDeleted === 'true' || query.isDeleted === true) {
+    conditions.push('i.is_deleted = TRUE');
+  } else {
+    if (query.includeDeleted !== 'true' && query.includeDeleted !== true) {
+      conditions.push('(i.is_deleted IS FALSE OR i.is_deleted IS NULL)');
+    }
+    if (targetStatus) {
+      conditions.push(`i.payment_status = $${idx++}`);
+      values.push(targetStatus);
+    }
   }
   if (cashierId) {
     conditions.push(`i.cashier_id = $${idx++}`);
@@ -1146,7 +1407,7 @@ async function listInvoices(companyId, query = {}) {
     values.push(endDate);
   }
   if (search && search.trim()) {
-    conditions.push(`(i.invoice_number ILIKE $${idx} OR i.cashier_name_snapshot ILIKE $${idx} OR i.parcel_order_number ILIKE $${idx})`);
+    conditions.push(`(i.invoice_number ILIKE $${idx} OR i.cashier_name_snapshot ILIKE $${idx} OR i.parcel_order_number ILIKE $${idx} OR i.customer_name ILIKE $${idx})`);
     values.push(`%${search.trim()}%`);
     idx++;
   }
@@ -1166,7 +1427,9 @@ async function listInvoices(companyId, query = {}) {
             i.company_legal_name_snapshot, i.company_trade_name_snapshot,
             i.cashier_name_snapshot, i.grand_total, i.payment_status,
             i.order_type, i.table_number_snapshot, i.parcel_order_number,
+            i.customer_name,
             i.settled_at, i.voided_at, i.void_reason, i.created_at,
+            i.is_deleted, i.deleted_at, i.deleted_by_user_id, i.delete_reason,
             COALESCE(
               (
                 SELECT string_agg(DISTINCT p.payment_method, ', ')
@@ -1969,6 +2232,8 @@ module.exports = {
   openCashierShift,
   closeCashierShift,
   voidInvoice,
+  deleteInvoice,
+  restoreInvoice,
   refundInvoice,
   changePaymentMode,
   getInvoiceById,

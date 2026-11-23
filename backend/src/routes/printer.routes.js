@@ -328,6 +328,15 @@ function createPrinterRouter(dependencies = {}) {
       return ok(res, req, result, 202);
     }));
 
+  router.post('/:printerId/test-connection', userAuthenticate, authorizeRoles('ADMIN', 'STORE_MANAGER'), requirePermission('printer:manage'), enforceTenantIsolation(),
+    handle('TEST_CONNECTION_FAILED', async (req, res) => {
+      const result = await printerService.testPrinterConnection({
+        companyId: req.tenant.companyId,
+        printerId: req.params.printerId
+      });
+      return ok(res, req, result);
+    }));
+
   return router;
 }
 

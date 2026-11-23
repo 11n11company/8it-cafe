@@ -48,13 +48,28 @@ function createProductRouter(dependencies = {}) {
         const hasCatalogManageAccess = canManageCatalog(req.user);
         const requestedInactive = req.query.includeInactive === 'true' || req.query.include_inactive === 'true';
         const includeInactive = hasCatalogManageAccess && requestedInactive;
+
+        const rawIsActive = req.query.isActive !== undefined ? req.query.isActive : req.query.is_active;
+        let isActive = undefined;
+        if (rawIsActive !== undefined && rawIsActive !== null && rawIsActive !== '') {
+          const parsed = rawIsActive === 'true' || rawIsActive === true;
+          if (parsed === false) {
+            // Only catalog managers can view inactive products
+            if (hasCatalogManageAccess) {
+              isActive = false;
+            }
+          } else {
+            isActive = true;
+          }
+        }
+
         const search = req.query.search || req.query.q;
         const page = req.query.page;
         const limit = req.query.limit;
 
         const result = await listProducts(
           companyId,
-          { brandId, categoryId, isKitchenItem, includeInactive, search, page, limit },
+          { brandId, categoryId, isKitchenItem, isActive, includeInactive, search, page, limit },
           dbPool
         );
 

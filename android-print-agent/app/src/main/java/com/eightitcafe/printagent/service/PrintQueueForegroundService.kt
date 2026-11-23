@@ -17,6 +17,7 @@ import com.eightitcafe.printagent.R
 import com.eightitcafe.printagent.data.AppPreferences
 import com.eightitcafe.printagent.data.ClaimedPrintJob
 import com.eightitcafe.printagent.data.PrintJobStore
+import com.eightitcafe.printagent.data.PrinterDeviceConfig
 import com.eightitcafe.printagent.escpos.EscPosBuilder
 import com.eightitcafe.printagent.network.AgentSession
 import com.eightitcafe.printagent.network.ApiClient
@@ -24,6 +25,7 @@ import com.eightitcafe.printagent.network.NetworkConnectivityMonitor
 import com.eightitcafe.printagent.network.PrintTransmissionResult
 import com.eightitcafe.printagent.network.SessionResult
 import com.eightitcafe.printagent.network.TcpPrinterClient
+import com.eightitcafe.printagent.transport.PrinterTransport
 import com.eightitcafe.printagent.ui.MainActivity
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -50,6 +52,7 @@ class PrintQueueForegroundService : Service() {
     private lateinit var apiClient: ApiClient
     private lateinit var agentSession: AgentSession
     private lateinit var tcpClient: TcpPrinterClient
+    private lateinit var printerTransport: PrinterTransport
     private lateinit var printJobStore: PrintJobStore
     private lateinit var networkMonitor: NetworkConnectivityMonitor
     @Volatile private var isNetworkOnline = true
@@ -83,6 +86,7 @@ class PrintQueueForegroundService : Service() {
         apiClient = app.apiClient
         agentSession = app.agentSession
         tcpClient = app.tcpPrinterClient
+        printerTransport = app.printerTransport
         printJobStore = app.printJobStore
 
         networkMonitor = NetworkConnectivityMonitor(this) { connected ->
@@ -316,30 +320,77 @@ class PrintQueueForegroundService : Service() {
 
     /**
      * Format ESC/POS payload and dispatch to target Wi-Fi thermal printer over TCP.
+     * Enforces strict role routing (KOT -> Kitchen only, Receipt -> Cashier only).
      * Enforces local deduplication: if the job was already printed, skips physical printing
      * and only retries the cloud acknowledgement.
      */
     private suspend fun processPrintJob(job: ClaimedPrintJob): Boolean {
         val startTime = System.currentTimeMillis()
-        val isKitchenJob = job.jobType == "KOT" || job.payload.title.contains("KOT", ignoreCase = true)
+        val isKitchenJob = job.jobType == "KOT" || job.jobType == "KOT_CANCELLATION" || job.payload.title.contains("KOT", ignoreCase = true)
+        val isReceiptJob = job.jobType == "RECEIPT" || job.payload.title.contains("RECEIPT", ignoreCase = true) || job.payload.title.contains("INVOICE", ignoreCase = true)
 
         // Strict device capability guard: Waiter tablets are restricted to KITCHEN_KOT only
-        if (prefs.isWaiterDevice && (job.jobType == "RECEIPT" || !isKitchenJob)) {
+        if (prefs.isWaiterDevice && !isKitchenJob) {
             broadcastLog("⚠️ Blocked non-kitchen job [${job.id.take(8)}] on waiter device. Waiter devices are restricted to KITCHEN_KOT.")
             return true
         }
 
-        // Select printer configuration
-        val targetIp = if (isKitchenJob) {
-            job.printer?.ipAddress?.ifEmpty { prefs.kitchenPrinterIp } ?: prefs.kitchenPrinterIp
+        // Formulate target printer configuration combining local preferences and cloud job overrides
+        val baseConfig = if (isKitchenJob) prefs.getKitchenPrinterConfig() else prefs.getCashierPrinterConfig()
+        val printerConfig = if (job.printer != null) {
+            baseConfig.copy(
+                id = job.printer.id.ifEmpty { baseConfig.id },
+                displayName = job.printer.printerName.ifEmpty { baseConfig.displayName },
+                role = job.printer.printerRole.ifEmpty { baseConfig.role },
+                ipAddress = job.printer.ipAddress.ifEmpty { baseConfig.ipAddress },
+                port = if (job.printer.port > 0) job.printer.port else baseConfig.port,
+                paperWidthMm = if (job.printer.paperWidthMm in listOf(58, 80)) job.printer.paperWidthMm else baseConfig.paperWidthMm,
+                charactersPerLine = if (job.printer.charactersPerLine > 0) job.printer.charactersPerLine else (if (job.printer.paperWidthMm == 58) 32 else 48),
+                isEnabled = job.printer.isActive
+            )
         } else {
-            job.printer?.ipAddress?.ifEmpty { prefs.cashierPrinterIp } ?: prefs.cashierPrinterIp
+            baseConfig
         }
 
-        val targetPort = if (isKitchenJob) {
-            if (job.printer != null && job.printer.port > 0) job.printer.port else prefs.kitchenPrinterPort
-        } else {
-            if (job.printer != null && job.printer.port > 0) job.printer.port else prefs.cashierPrinterPort
+        // =====================================================================
+        // STRICT ROLE ROUTING GUARDS (Phase 3)
+        // =====================================================================
+        // 1. KOT jobs MUST NOT be dispatched to cashier receipt printer
+        if (isKitchenJob && printerConfig.isCashierReceiptRole) {
+            val durationMs = System.currentTimeMillis() - startTime
+            broadcastLog("⚠️ Strict routing rejection: KOT job [${job.id.take(8)}] targeted COUNTER_RECEIPT printer [${printerConfig.displayName}].")
+            printJobStore.recordFailed(job.id, "ROUTING_MISMATCH_KOT_ON_RECEIPT", "KOT job cannot be sent to cashier receipt printer", durationMs)
+            agentSession.call { token ->
+                apiClient.failJob(
+                    jobId = job.id,
+                    token = token,
+                    errorCode = "ROUTING_MISMATCH_KOT_ON_RECEIPT",
+                    errorMessage = "KOT job cannot be sent to cashier receipt printer",
+                    durationMs = durationMs,
+                    claimToken = job.claimToken,
+                    isRetryable = false
+                )
+            }
+            return true
+        }
+
+        // 2. Receipt jobs MUST NOT be dispatched to kitchen printer
+        if (isReceiptJob && printerConfig.isKitchenRole) {
+            val durationMs = System.currentTimeMillis() - startTime
+            broadcastLog("⚠️ Strict routing rejection: RECEIPT job [${job.id.take(8)}] targeted KITCHEN_KOT printer [${printerConfig.displayName}].")
+            printJobStore.recordFailed(job.id, "ROUTING_MISMATCH_RECEIPT_ON_KITCHEN", "Receipt job cannot be sent to kitchen printer", durationMs)
+            agentSession.call { token ->
+                apiClient.failJob(
+                    jobId = job.id,
+                    token = token,
+                    errorCode = "ROUTING_MISMATCH_RECEIPT_ON_KITCHEN",
+                    errorMessage = "Receipt job cannot be sent to kitchen printer",
+                    durationMs = durationMs,
+                    claimToken = job.claimToken,
+                    isRetryable = false
+                )
+            }
+            return true
         }
 
         // =====================================================================
@@ -398,24 +449,21 @@ class PrintQueueForegroundService : Service() {
         }
 
         // Fresh job: record CLAIMED in local store
-        printJobStore.recordClaimed(job.id, job.claimToken, job.jobType, targetIp, targetPort)
+        printJobStore.recordClaimed(job.id, job.claimToken, job.jobType, printerConfig.ipAddress, printerConfig.port)
 
-        val printerRoleName = if (isKitchenJob) "KITCHEN (${targetIp}:${targetPort})" else "CASHIER (${targetIp}:${targetPort})"
-        broadcastLog("Printing ${job.jobType} [Job ${job.id.take(8)}] to $printerRoleName...")
+        broadcastLog("Printing ${job.jobType} [Job ${job.id.take(8)}] to ${printerConfig.displayName} (${printerConfig.ipAddress}:${printerConfig.port})...")
 
-        // Format ESC/POS buffer with dynamic paper width & CPL (Findings 19 & 20)
-        val cpl = job.printer?.charactersPerLine ?: (if (job.printer?.paperWidthMm == 58) 32 else 48)
-        val paperWidth = job.printer?.paperWidthMm ?: 80
-
+        // Format ESC/POS buffer with dynamic paper width & CPL (Phase 2 Generalized Builder)
+        val builder = EscPosBuilder(printerConfig)
         val escposBuffer = when (job.jobType) {
-            "TEST_PRINT" -> EscPosBuilder(cpl = cpl, paperWidthMm = paperWidth).buildTestPrint(job.payload)
-            "KOT_CANCELLATION" -> EscPosBuilder(cpl = cpl, paperWidthMm = paperWidth).buildKotCancellation(job.payload)
-            "KOT" -> EscPosBuilder(cpl = cpl, paperWidthMm = paperWidth).buildKot(job.payload)
-            else -> EscPosBuilder(cpl = cpl, paperWidthMm = paperWidth).buildReceipt(job.payload)
+            "TEST_PRINT" -> builder.buildTestPrint(job.payload)
+            "KOT_CANCELLATION" -> builder.buildKotCancellation(job.payload)
+            "KOT" -> builder.buildKot(job.payload)
+            else -> builder.buildReceipt(job.payload)
         }
 
-        // Send binary buffer directly over TCP socket with DLE EOT status checks
-        val printResult = tcpClient.printRawBytes(targetIp, targetPort, escposBuffer, checkStatusBeforePrint = true)
+        // Send binary buffer directly over configured transport
+        val printResult = printerTransport.transmit(printerConfig, escposBuffer, checkStatusBeforePrint = true)
         val durationMs = System.currentTimeMillis() - startTime
 
         return when (printResult) {

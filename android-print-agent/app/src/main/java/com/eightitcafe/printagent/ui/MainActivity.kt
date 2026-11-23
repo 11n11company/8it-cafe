@@ -19,6 +19,7 @@ import androidx.core.content.ContextCompat
 import androidx.lifecycle.lifecycleScope
 import com.eightitcafe.printagent.PrintAgentApp
 import com.eightitcafe.printagent.data.AppPreferences
+import com.eightitcafe.printagent.data.PrinterDeviceConfig
 import com.eightitcafe.printagent.databinding.ActivityMainBinding
 import com.eightitcafe.printagent.escpos.EscPosBuilder
 import com.eightitcafe.printagent.network.ApiClient
@@ -26,6 +27,7 @@ import com.eightitcafe.printagent.network.NetworkConnectivityMonitor
 import com.eightitcafe.printagent.network.PrintTransmissionResult
 import com.eightitcafe.printagent.network.TcpPrinterClient
 import com.eightitcafe.printagent.service.PrintQueueForegroundService
+import com.eightitcafe.printagent.transport.PrinterTransport
 import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -42,6 +44,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var prefs: AppPreferences
     private lateinit var apiClient: ApiClient
     private lateinit var tcpClient: TcpPrinterClient
+    private lateinit var printerTransport: PrinterTransport
     private lateinit var networkMonitor: NetworkConnectivityMonitor
 
     private val logBuffer = StringBuilder()
@@ -70,6 +73,7 @@ class MainActivity : AppCompatActivity() {
         prefs = app.preferences
         apiClient = app.apiClient
         tcpClient = app.tcpPrinterClient
+        printerTransport = app.printerTransport
 
         networkMonitor = NetworkConnectivityMonitor(this) { isOnline ->
             runOnUiThread { updateNetworkStatusUi(isOnline) }
@@ -238,12 +242,17 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun testSocketConnection(name: String, ip: String, port: Int) {
-        appendLog("Testing TCP socket to $name printer at $ip:$port...")
+        appendLog("Testing TCP socket handshake to $name printer at $ip:$port...")
         lifecycleScope.launch {
-            val res = tcpClient.testConnection(ip, port)
+            val config = (if (name == "KITCHEN") prefs.getKitchenPrinterConfig() else prefs.getCashierPrinterConfig()).copy(
+                ipAddress = ip,
+                port = port
+            )
+            val res = printerTransport.testConnection(config)
             res.onSuccess { msg ->
                 appendLog("✓ $name: $msg")
-                Toast.makeText(this@MainActivity, "Connection OK: $ip:$port", Toast.LENGTH_SHORT).show()
+                appendLog("ℹ️ NOTE: Socket handshake verified successfully. This verifies network reachability only; physical printing is NOT performed.")
+                Toast.makeText(this@MainActivity, "Connection OK (Socket only): $ip:$port", Toast.LENGTH_SHORT).show()
             }.onFailure { err ->
                 appendLog("✗ $name: ${err.message}")
                 Toast.makeText(this@MainActivity, "Connect Error: ${err.message}", Toast.LENGTH_LONG).show()
@@ -254,11 +263,16 @@ class MainActivity : AppCompatActivity() {
     private fun printTestSlip(role: String, ip: String, port: Int) {
         appendLog("Transmitting diagnostic ESC/POS test slip to $role ($ip:$port)...")
         lifecycleScope.launch {
-            val testBytes = EscPosBuilder(cpl = 48).buildTestSlip(role, ip, port)
-            when (val res = tcpClient.printRawBytes(ip, port, testBytes, checkStatusBeforePrint = true)) {
+            val config = (if (role == "KITCHEN_KOT") prefs.getKitchenPrinterConfig() else prefs.getCashierPrinterConfig()).copy(
+                ipAddress = ip,
+                port = port
+            )
+            val testBytes = EscPosBuilder(config).buildTestSlip(role, ip, port)
+            when (val res = printerTransport.transmit(config, testBytes, checkStatusBeforePrint = true)) {
                 is PrintTransmissionResult.Success -> {
-                    appendLog("✓ Test slip printed (${res.bytesWritten} bytes, ${res.executionState}) to $ip:$port.")
-                    Toast.makeText(this@MainActivity, "Test slip printed to $ip:$port", Toast.LENGTH_SHORT).show()
+                    appendLog("✓ Test slip sent (${res.bytesWritten} bytes, ${res.executionState}) to $ip:$port.")
+                    appendLog("ℹ️ Test slip data transmitted to printer buffer. Operator must visually verify physical printout and paper cut.")
+                    Toast.makeText(this@MainActivity, "Test slip transmitted to $ip:$port", Toast.LENGTH_SHORT).show()
                 }
                 is PrintTransmissionResult.Failure -> {
                     appendLog("✗ Test slip failed on $ip:$port: ${res.message}")

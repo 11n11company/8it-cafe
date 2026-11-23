@@ -40,13 +40,48 @@ async function dispatchKotToKitchenPrinters(client, {
   items // array of { brandName, itemName, quantity, notes, categoryId }
 }) {
   // 1. Fetch active kitchen printers for tenant
-  const printersRes = await client.query(
+  let printersRes = await client.query(
     `SELECT id, printer_code, printer_name, characters_per_line, paper_width_mm
      FROM printers
      WHERE company_id = $1 AND is_active = TRUE AND printer_role = 'KITCHEN_KOT'
      ORDER BY created_at ASC`,
     [companyId]
   );
+
+  if (printersRes.rows.length === 0) {
+    // Check if any kitchen printer exists at all for this company (even inactive)
+    const anyPrinterRes = await client.query(
+      `SELECT id, is_active FROM printers WHERE company_id = $1 AND printer_role = 'KITCHEN_KOT'`,
+      [companyId]
+    );
+
+    // Auto-provision default kitchen printer on the fly if tenant has zero kitchen printers
+    if (anyPrinterRes.rows.length === 0) {
+      const defaultCode = `PRN-KIT-${String(companyId).replace(/-/g, '').substring(0, 4).toUpperCase()}`;
+      const autoProvRes = await client.query(
+        `INSERT INTO printers (
+           company_id, printer_code, printer_name, printer_role, connection_type,
+           ip_address, port, paper_width_mm, characters_per_line, is_active
+         ) VALUES (
+           $1,
+           $2,
+           'Kitchen Master Thermal Printer',
+           'KITCHEN_KOT',
+           'TCP_IP',
+           '192.168.1.150',
+           9100,
+           80,
+           48,
+           TRUE
+         ) ON CONFLICT (company_id, printer_code) DO NOTHING
+         RETURNING id, printer_code, printer_name, characters_per_line, paper_width_mm`,
+        [companyId, defaultCode]
+      );
+      if (autoProvRes.rows.length > 0) {
+        printersRes = autoProvRes;
+      }
+    }
+  }
 
   if (printersRes.rows.length === 0) {
     return {
@@ -246,13 +281,25 @@ async function createKotForInvoice(companyId, cashierId, invoiceId, idempotencyK
     }
 
     // 5. Generate concurrency-safe sequential KOT number (Finding 10)
-    const seqRes = await client.query(
-      `SELECT fn_get_next_kot_sequence($1, 'STANDARD') AS seq`,
-      [companyId]
-    );
-    const nextSeq = seqRes.rows[0].seq;
+    let kotNumber;
+    let attempts = 0;
     const year = new Date().getFullYear();
-    const kotNumber = `KOT-${year}-${String(nextSeq).padStart(5, '0')}`;
+    while (attempts < 10) {
+      attempts++;
+      const seqRes = await client.query(
+        `SELECT fn_get_next_kot_sequence($1, 'STANDARD') AS seq`,
+        [companyId]
+      );
+      const nextSeq = seqRes.rows[0].seq;
+      kotNumber = `KOT-${year}-${String(nextSeq).padStart(5, '0')}`;
+      const existingCheck = await client.query(
+        `SELECT 1 FROM kots WHERE company_id = $1 AND kot_number = $2`,
+        [companyId, kotNumber]
+      );
+      if (existingCheck.rows.length === 0) {
+        break;
+      }
+    }
 
     // 6. Insert KOT record
     const kotId = crypto.randomUUID();
@@ -678,6 +725,17 @@ async function createParcelKot(companyId, cashierId, payload = {}, idempotencyKe
     // If all kitchen items have already been dispatched
     if (itemsToDispatch.length === 0) {
       const lastKot = existingKotsRes.rows[0];
+      const agentCheck = await client.query(
+        `SELECT EXISTS (
+           SELECT 1 FROM print_agents
+           WHERE company_id = $1 AND is_active = TRUE
+             AND last_heartbeat_at IS NOT NULL
+             AND last_heartbeat_at >= NOW() - INTERVAL '60 seconds'
+         ) AS is_online`,
+        [companyId]
+      );
+      const isPrinterOnline = Boolean(agentCheck.rows[0]?.is_online);
+
       const resp = {
         kotId: lastKot?.id || null,
         kotNumber: lastKot?.kot_number || null,
@@ -685,6 +743,10 @@ async function createParcelKot(companyId, cashierId, payload = {}, idempotencyKe
         parcelOrderNumber,
         itemCount: 0,
         jobStatus: 'COMPLETED',
+        queueAccepted: true,
+        alreadySent: true,
+        printerOnline: isPrinterOnline,
+        printerStatus: isPrinterOnline ? 'ONLINE' : 'OFFLINE',
         message: 'All kitchen items have already been sent to kitchen.'
       };
       await client.query('COMMIT');
@@ -692,11 +754,23 @@ async function createParcelKot(companyId, cashierId, payload = {}, idempotencyKe
     }
 
     // 7. Generate concurrency-safe sequential Parcel KOT number (Finding 10)
-    const seqRes = await client.query(
-      `SELECT fn_get_next_kot_sequence($1, 'PARCEL') AS seq`,
-      [companyId]
-    );
-    const kotNumber = `KOT-PCL-${String(seqRes.rows[0].seq).padStart(5, '0')}`;
+    let kotNumber;
+    let attempts = 0;
+    while (attempts < 10) {
+      attempts++;
+      const seqRes = await client.query(
+        `SELECT fn_get_next_kot_sequence($1, 'PARCEL') AS seq`,
+        [companyId]
+      );
+      kotNumber = `KOT-PCL-${String(seqRes.rows[0].seq).padStart(5, '0')}`;
+      const existingCheck = await client.query(
+        `SELECT 1 FROM kots WHERE company_id = $1 AND kot_number = $2`,
+        [companyId, kotNumber]
+      );
+      if (existingCheck.rows.length === 0) {
+        break;
+      }
+    }
 
     // 8. Cashier name snapshot
     const userRes = await client.query(
@@ -750,6 +824,25 @@ async function createParcelKot(companyId, cashierId, payload = {}, idempotencyKe
       items: itemsToDispatch
     });
 
+    if (dispatchResult.status === 'NO_ACTIVE_PRINTER' || !dispatchResult.printJobs || dispatchResult.printJobs.length === 0) {
+      throw new KotError(
+        'Kitchen printer is unavailable. Please check kitchen printer connection and retry.',
+        'KITCHEN_PRINTER_UNAVAILABLE',
+        503
+      );
+    }
+
+    const agentOnlineRes = await client.query(
+      `SELECT EXISTS (
+         SELECT 1 FROM print_agents
+         WHERE company_id = $1 AND is_active = TRUE
+           AND last_heartbeat_at IS NOT NULL
+           AND last_heartbeat_at >= NOW() - INTERVAL '60 seconds'
+       ) AS is_online`,
+      [companyId]
+    );
+    const isPrinterOnline = Boolean(agentOnlineRes.rows[0]?.is_online);
+
     const responsePayload = {
       kotId,
       kotNumber,
@@ -760,9 +853,14 @@ async function createParcelKot(companyId, cashierId, payload = {}, idempotencyKe
       printJobId: dispatchResult.printJobs[0]?.printJobId || null,
       printJobs: dispatchResult.printJobs,
       jobStatus: dispatchResult.status,
+      queueAccepted: true,
+      printerOnline: isPrinterOnline,
+      printerStatus: isPrinterOnline ? 'ONLINE' : 'OFFLINE',
       itemCount: itemsToDispatch.length,
       items: itemsToDispatch,
-      message: `PARCEL KOT #${kotNumber} (Batch ${nextBatchNumber}, ${parcelOrderNumber}) queued for kitchen printer.`
+      message: isPrinterOnline
+        ? `PARCEL KOT #${kotNumber} (Batch ${nextBatchNumber}, ${parcelOrderNumber}) queued for kitchen printer.`
+        : 'KOT queued — waiting for kitchen printer'
     };
 
     // 11. Record idempotency if key supplied
@@ -1025,9 +1123,148 @@ async function listRecentKots(companyId, options = {}) {
   }));
 }
 
+/**
+ * Mandatory KOT dispatch safeguard for parcel orders.
+ * Checks whether all kitchen-eligible quantities have been successfully dispatched to KOT.
+ * Retail-only items (is_kitchen_item = false) do not prevent payment.
+ * Returns { allDispatched: boolean, hasKitchenItems: boolean, unsentItems: Array, dispatchedMap: Object }
+ */
+async function verifyParcelKotDispatched(companyId, payload = {}, existingClient = null) {
+  const client = existingClient || (await pool.connect());
+  const shouldRelease = !existingClient;
+
+  try {
+    const parcelOrderNumber = payload.parcelOrderNumber || payload.parcel_order_number || null;
+    const invoiceId = payload.invoiceId || payload.invoice_id || null;
+    const items = payload.items || [];
+
+    if (!items || items.length === 0) {
+      return { allDispatched: true, hasKitchenItems: false, unsentItems: [], dispatchedMap: {} };
+    }
+
+    // 1. Resolve product kitchen eligibility and required quantities
+    const requiredMap = new Map(); // itemName -> requiredQty
+    let hasKitchenItems = false;
+
+    // Check if items have productId and lack isKitchenItem or is_kitchen_item_snapshot
+    const needsProductLookup = items.some(
+      (i) => (i.productId || i.product_id) && i.isKitchenItem === undefined && i.is_kitchen_item_snapshot === undefined && i.is_kitchen_item === undefined
+    );
+
+    let prodMap = new Map();
+    if (needsProductLookup) {
+      const productIds = items.map((i) => i.productId || i.product_id).filter(Boolean);
+      if (productIds.length > 0) {
+        const pRes = await client.query(
+          `SELECT id, name, is_kitchen_item
+           FROM products
+           WHERE company_id = $1 AND id = ANY($2::uuid[])`,
+          [companyId, productIds]
+        );
+        for (const p of pRes.rows) {
+          prodMap.set(p.id, p);
+        }
+      }
+    }
+
+    for (const item of items) {
+      let itemName = item.itemName || item.item_name_snapshot || item.name;
+      let isKitchen = item.isKitchenItem ?? item.is_kitchen_item_snapshot ?? item.is_kitchen_item;
+
+      const pid = item.productId || item.product_id;
+      if (pid && prodMap.has(pid)) {
+        const p = prodMap.get(pid);
+        if (!itemName) itemName = p.name;
+        if (isKitchen === undefined) isKitchen = p.is_kitchen_item;
+      }
+
+      const qty = parseInt(item.quantity, 10) || 0;
+      if (qty > 0 && isKitchen) {
+        hasKitchenItems = true;
+        requiredMap.set(itemName, (requiredMap.get(itemName) || 0) + qty);
+      }
+    }
+
+    // If order contains no kitchen items (retail only), payment is always permitted
+    if (!hasKitchenItems || requiredMap.size === 0) {
+      return { allDispatched: true, hasKitchenItems: false, unsentItems: [], dispatchedMap: {} };
+    }
+
+    // 2. Query sent KOT quantities for this parcel order number and/or invoice id
+    const conditions = [
+      'k.company_id = $1',
+      'k.is_reprint = FALSE',
+      "k.status != 'CANCELLED'",
+      'ki.is_cancelled = FALSE'
+    ];
+    const params = [companyId];
+
+    if (parcelOrderNumber && invoiceId) {
+      params.push(parcelOrderNumber, invoiceId);
+      conditions.push('(k.parcel_order_number = $2 OR k.invoice_id = $3)');
+    } else if (parcelOrderNumber) {
+      params.push(parcelOrderNumber);
+      conditions.push('k.parcel_order_number = $2');
+    } else if (invoiceId) {
+      params.push(invoiceId);
+      conditions.push('k.invoice_id = $2');
+    } else {
+      // Neither parcelOrderNumber nor invoiceId provided, so nothing could have been sent
+      const unsent = Array.from(requiredMap.entries()).map(([name, qty]) => ({
+        name,
+        requiredQuantity: qty,
+        dispatchedQuantity: 0,
+        unsentQuantity: qty
+      }));
+      return { allDispatched: false, hasKitchenItems: true, unsentItems: unsent, dispatchedMap: {} };
+    }
+
+    const query = `
+      SELECT ki.item_name_snapshot,
+             SUM(ki.quantity - COALESCE(ki.cancelled_quantity, 0))::int AS sent_quantity
+      FROM kots k
+      JOIN kot_items ki ON k.id = ki.kot_id
+      WHERE ${conditions.join(' AND ')}
+      GROUP BY ki.item_name_snapshot
+    `;
+
+    const sentRes = await client.query(query, params);
+    const sentMap = new Map();
+    for (const row of sentRes.rows) {
+      sentMap.set(row.item_name_snapshot, Number(row.sent_quantity) || 0);
+    }
+
+    // 3. Compute unsent items
+    const unsentItems = [];
+    for (const [name, reqQty] of requiredMap.entries()) {
+      const sentQty = sentMap.get(name) || 0;
+      if (sentQty < reqQty) {
+        unsentItems.push({
+          name,
+          requiredQuantity: reqQty,
+          dispatchedQuantity: sentQty,
+          unsentQuantity: reqQty - sentQty
+        });
+      }
+    }
+
+    return {
+      allDispatched: unsentItems.length === 0,
+      hasKitchenItems: true,
+      unsentItems,
+      dispatchedMap: Object.fromEntries(sentMap)
+    };
+  } finally {
+    if (shouldRelease) {
+      client.release();
+    }
+  }
+}
+
 module.exports = {
   createKotForInvoice,
   createParcelKot,
+  verifyParcelKotDispatched,
   reprintKot,
   cancelKot,
   getKotForInvoice,

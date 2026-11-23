@@ -7,8 +7,6 @@ import { TaxAdmin } from './TaxAdmin';
 import { UserAdmin } from './UserAdmin';
 import { InventoryAdmin } from './InventoryAdmin';
 import { PrinterAgentAdmin } from './PrinterAgentAdmin';
-import { AuditLogAdmin } from './AuditLogAdmin';
-import { BackupRecoveryAdmin } from './BackupRecoveryAdmin';
 import { TableGrid } from '../tables/TableGrid';
 import { ReportsScreen } from '../reports/ReportsScreen';
 import { ReceiptModal } from '../pos/ReceiptModal';
@@ -39,7 +37,6 @@ import {
   ReceiptText,
   RefreshCw,
   Settings,
-  ShieldCheck,
   ShoppingBag,
   Tag,
   TrendingUp,
@@ -47,14 +44,13 @@ import {
   UserRoundCog,
   Users,
   UtensilsCrossed,
-  Wallet,
-  Archive
+  Wallet
 } from 'lucide-react';
 
 const PAGE_META = {
   dashboard: { title: 'Dashboard', desc: 'Sales, payments and brand performance at a glance.' },
   orders: { title: 'Orders', desc: 'Live dine-in and parcel orders across all outlets.' },
-  invoices: { title: 'Invoices', desc: 'Search, reprint and void tax invoices.' },
+  invoices: { title: 'Invoices', desc: 'Search, reprint and manage tax invoices.' },
   reports: { title: 'Reports', desc: 'Sales analytics by date range, brand and product.' },
   tables: { title: 'Tables', desc: 'Live floor status for dine-in service.' },
   kitchen: { title: 'Kitchen Display', desc: 'KOTs sent from tables and parcel orders.' },
@@ -68,8 +64,6 @@ const PAGE_META = {
   company_settings: { title: 'Company Settings', desc: 'Legal entity, GSTIN and brand details.' },
   users: { title: 'Staff and Users', desc: 'Manage staff accounts, roles and PINs.' },
   devices: { title: 'Devices & Printers', desc: 'Android print agent provisioning, printer network settings and diagnostics.' },
-  security_audit: { title: 'Security & Audit Logs', desc: 'Tamper-evident immutable audit trail of system actions, logins, and mutations.' },
-  backup_recovery: { title: 'Backup & Recovery', desc: 'Automated pg_dump backups, archive verification, and isolated disaster recovery testing.' },
   roles: { title: 'Roles & Permissions', desc: 'What each role can access.' },
   payments: { title: 'Payment History', desc: 'Settled payments by mode and cashier.' },
   refunds: { title: 'Refunds', desc: 'Refunded and voided invoices.' }
@@ -111,15 +105,16 @@ export function AdminDashboard({ onOpenSwitchCashier }) {
   // Invoices table state
   const [invoices, setInvoices] = useState([]);
   const [loadingInvoices, setLoadingInvoices] = useState(false);
-  const [invoiceFilter, setInvoiceFilter] = useState('ALL'); // 'ALL', 'PAID', 'PENDING', 'REFUNDED', 'VOIDED'
+  const [invoiceFilter, setInvoiceFilter] = useState('ALL'); // 'ALL', 'PAID', 'PENDING', 'DELETED', 'REFUNDED', 'VOIDED'
   const [invoiceSearch, setInvoiceSearch] = useState('');
 
   // Modals
   const [selectedInvoiceForReceipt, setSelectedInvoiceForReceipt] = useState(null);
-  const [voidModalOpen, setVoidModalOpen] = useState(false);
-  const [invoiceToVoid, setInvoiceToVoid] = useState(null);
-  const [voidReason, setVoidReason] = useState('');
-  const [voiding, setVoiding] = useState(false);
+  const [deleteModalOpen, setDeleteModalOpen] = useState(false);
+  const [invoiceToDelete, setInvoiceToDelete] = useState(null);
+  const [deleteReason, setDeleteReason] = useState('');
+  const [deleting, setDeleting] = useState(false);
+  const [deleteFeedback, setDeleteFeedback] = useState(null);
 
   // Live Floor Tables State
   const [adminTables, setAdminTables] = useState([]);
@@ -273,7 +268,7 @@ export function AdminDashboard({ onOpenSwitchCashier }) {
     }
     try {
       const [invRes, tablesRes] = await Promise.all([
-        api.billing.listInvoices({ limit: 100, includeItems: true }),
+        api.billing.listInvoices({ limit: 100, includeItems: true, includeDeleted: true }),
         api.tables.list().catch(() => null)
       ]);
       const invoiceList = Array.isArray(invRes?.data) ? invRes.data : (invRes?.data?.invoices || []);
@@ -314,7 +309,9 @@ export function AdminDashboard({ onOpenSwitchCashier }) {
         };
       });
 
-      const invoiceOrders = invoiceList.map((inv) => {
+      const invoiceOrders = invoiceList
+        .filter((inv) => !inv.is_deleted)
+        .map((inv) => {
         const isDineIn = inv.order_type === 'DINE_IN';
         const status =
           inv.payment_status === 'PAID'
@@ -439,23 +436,27 @@ export function AdminDashboard({ onOpenSwitchCashier }) {
     setTimeout(() => setRefreshing(false), 400);
   };
 
-  // Void an invoice (Admin or Manager with permission)
-  const handleVoidInvoice = async () => {
-    if (!invoiceToVoid || !voidReason.trim()) {
-      alert('Please enter a valid reason for voiding or refunding this invoice.');
+  // Delete an invoice (Admin soft-delete: preserves legal & financial data for audit)
+  const handleDeleteInvoice = async () => {
+    if (!invoiceToDelete || !deleteReason.trim()) {
+      alert('Please enter a valid reason for deleting this invoice.');
       return;
     }
-    setVoiding(true);
+    setDeleting(true);
+    setDeleteFeedback(null);
     try {
-      await api.billing.voidInvoice(invoiceToVoid.id, voidReason.trim());
-      setVoidModalOpen(false);
-      setInvoiceToVoid(null);
-      setVoidReason('');
+      await api.billing.deleteInvoice(invoiceToDelete.id, deleteReason.trim());
+      setInvoices((prev) => prev.map((inv) => (inv.id === invoiceToDelete.id ? { ...inv, is_deleted: true } : inv)));
+      setDeleteFeedback({ type: 'success', message: `Invoice ${invoiceToDelete.invoice_number} successfully deleted.` });
+      setDeleteModalOpen(false);
+      setInvoiceToDelete(null);
+      setDeleteReason('');
       await loadOrdersAndInvoices();
     } catch (err) {
-      alert(err.message || 'Failed to void invoice');
+      setDeleteFeedback({ type: 'error', message: err.message || 'Failed to delete invoice' });
+      alert(err.message || 'Failed to delete invoice');
     } finally {
-      setVoiding(false);
+      setDeleting(false);
     }
   };
 
@@ -490,11 +491,15 @@ export function AdminDashboard({ onOpenSwitchCashier }) {
 
   // Filtered invoices table
   const filteredInvoices = invoices.filter((inv) => {
-
-    if (invoiceFilter === 'PAID' && inv.payment_status !== 'PAID') return false;
-    if (invoiceFilter === 'PENDING' && inv.payment_status !== 'PENDING') return false;
-    if (invoiceFilter === 'REFUNDED' && inv.payment_status !== 'REFUNDED') return false;
-    if (invoiceFilter === 'VOIDED' && inv.payment_status !== 'VOIDED') return false;
+    if (invoiceFilter === 'DELETED') {
+      if (!inv.is_deleted) return false;
+    } else {
+      if (inv.is_deleted) return false;
+      if (invoiceFilter === 'PAID' && inv.payment_status !== 'PAID') return false;
+      if (invoiceFilter === 'PENDING' && inv.payment_status !== 'PENDING') return false;
+      if (invoiceFilter === 'REFUNDED' && inv.payment_status !== 'REFUNDED') return false;
+      if (invoiceFilter === 'VOIDED' && inv.payment_status !== 'VOIDED') return false;
+    }
 
     if (invoiceSearch.trim()) {
       const q = invoiceSearch.toLowerCase();
@@ -656,24 +661,6 @@ export function AdminDashboard({ onOpenSwitchCashier }) {
             >
               <span className="saas-nav-icon"><Printer className="ui-icon" aria-hidden="true" /></span>
               <span className="saas-nav-text">Devices &amp; Printers</span>
-            </button>
-
-            <button
-              type="button"
-              className={`saas-nav-item ${activeTab === 'security_audit' ? 'active' : ''}`}
-              onClick={() => setActiveTab('security_audit')}
-            >
-              <span className="saas-nav-icon"><ShieldCheck className="ui-icon" aria-hidden="true" /></span>
-              <span className="saas-nav-text">Security &amp; Audit</span>
-            </button>
-
-            <button
-              type="button"
-              className={`saas-nav-item ${activeTab === 'backup_recovery' ? 'active' : ''}`}
-              onClick={() => setActiveTab('backup_recovery')}
-            >
-              <span className="saas-nav-icon"><Archive className="ui-icon" aria-hidden="true" /></span>
-              <span className="saas-nav-text">Backup &amp; Recovery</span>
             </button>
           </div>
 
@@ -1139,7 +1126,7 @@ export function AdminDashboard({ onOpenSwitchCashier }) {
                   className={`saas-filter-pill ${invoiceFilter === 'ALL' ? 'active' : ''}`}
                   onClick={() => setInvoiceFilter('ALL')}
                 >
-                  All Invoices ({invoices.length})
+                  All Invoices ({invoices.filter((i) => !i.is_deleted).length})
                 </button>
                 <button
                   type="button"
@@ -1154,6 +1141,13 @@ export function AdminDashboard({ onOpenSwitchCashier }) {
                   onClick={() => setInvoiceFilter('PENDING')}
                 >
                   Pending
+                </button>
+                <button
+                  type="button"
+                  className={`saas-filter-pill ${invoiceFilter === 'DELETED' ? 'active' : ''}`}
+                  onClick={() => setInvoiceFilter('DELETED')}
+                >
+                  Deleted ({invoices.filter((i) => i.is_deleted).length})
                 </button>
                 <button
                   type="button"
@@ -1213,11 +1207,15 @@ export function AdminDashboard({ onOpenSwitchCashier }) {
                                   borderRadius: '6px',
                                   fontWeight: 700,
                                   fontSize: '0.72rem',
-                                  background: isPaid ? 'var(--color-success-soft)' : (isVoided ? 'var(--color-danger-soft)' : 'var(--color-warning-soft)'),
-                                  color: isPaid ? 'var(--color-success)' : (isVoided ? 'var(--color-danger)' : 'var(--color-warning)')
+                                  background: inv.is_deleted
+                                    ? 'var(--color-danger-soft)'
+                                    : (isPaid ? 'var(--color-success-soft)' : (isVoided ? 'var(--color-danger-soft)' : 'var(--color-warning-soft)')),
+                                  color: inv.is_deleted
+                                    ? 'var(--color-danger)'
+                                    : (isPaid ? 'var(--color-success)' : (isVoided ? 'var(--color-danger)' : 'var(--color-warning)'))
                                 }}
                               >
-                                {inv.payment_status || 'PAID'}
+                                {inv.is_deleted ? 'DELETED' : (inv.payment_status || 'PAID')}
                               </span>
                             </td>
                             <td style={{ padding: '12px 16px', color: 'var(--color-text)' }}>
@@ -1233,18 +1231,31 @@ export function AdminDashboard({ onOpenSwitchCashier }) {
                                 >
                                   🖨️ Receipt
                                 </button>
-                                {isPaid && (isAdmin || hasPermission('invoice:void')) && (
+                                {!inv.is_deleted && isAdmin && (
                                   <button
                                     type="button"
                                     className="saas-pill-btn danger"
-                                    style={{ padding: '4px 10px', fontSize: '0.75rem' }}
-                                    onClick={() => {
-                                      setInvoiceToVoid(inv);
-                                      setVoidModalOpen(true);
+                                    style={{
+                                      padding: '4px 10px',
+                                      fontSize: '0.75rem',
+                                      backgroundColor: 'var(--color-danger, #dc2626)',
+                                      color: '#ffffff',
+                                      borderColor: 'var(--color-danger, #dc2626)'
                                     }}
+                                    onClick={() => {
+                                      setInvoiceToDelete(inv);
+                                      setDeleteReason('');
+                                      setDeleteModalOpen(true);
+                                    }}
+                                    title="Delete invoice (Soft-delete with financial audit preservation)"
                                   >
-                                    Void
+                                    Delete
                                   </button>
+                                )}
+                                {inv.is_deleted && (
+                                  <span style={{ fontSize: '0.75rem', color: 'var(--color-danger)', fontWeight: 700, padding: '4px 8px' }}>
+                                    Deleted
+                                  </span>
                                 )}
                               </div>
                             </td>
@@ -1706,8 +1717,6 @@ export function AdminDashboard({ onOpenSwitchCashier }) {
           {activeTab === 'company_settings' && <CompanyBrandAdmin />}
           {activeTab === 'users' && <UserAdmin />}
           {activeTab === 'devices' && <PrinterAgentAdmin />}
-          {activeTab === 'security_audit' && <AuditLogAdmin />}
-          {activeTab === 'backup_recovery' && <BackupRecoveryAdmin />}
           {activeTab === 'reports' && (
             <ReportsScreen
               brandId={selectedBrandId}
@@ -1717,42 +1726,39 @@ export function AdminDashboard({ onOpenSwitchCashier }) {
         </div>
       </div>
 
-      {/* Void Invoice Confirmation Modal */}
-      {voidModalOpen && invoiceToVoid && (
+      {/* Delete Invoice Confirmation Modal */}
+      {deleteModalOpen && invoiceToDelete && (
         <Modal
-          isOpen={voidModalOpen}
-          onClose={() => setVoidModalOpen(false)}
-          title={`Void Invoice: ${invoiceToVoid.invoice_number}`}
+          isOpen={deleteModalOpen}
+          onClose={() => setDeleteModalOpen(false)}
+          title={`Delete Invoice: ${invoiceToDelete.invoice_number}`}
           footer={
             <>
-              <Button variant="outline" onClick={() => setVoidModalOpen(false)}>
+              <Button variant="outline" onClick={() => setDeleteModalOpen(false)} disabled={deleting}>
                 Cancel
               </Button>
               <Button
                 variant="danger"
-                onClick={handleVoidInvoice}
-                disabled={voiding || !voidReason.trim()}
+                onClick={handleDeleteInvoice}
+                disabled={deleting || !deleteReason.trim()}
               >
-                {voiding ? 'Voiding...' : 'Confirm Void & Reversal'}
+                {deleting ? 'Deleting...' : 'Delete Invoice'}
               </Button>
             </>
           }
         >
           <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
-            <p className="text-sm">
-              Voiding invoice <strong>{invoiceToVoid.invoice_number}</strong> of amount{' '}
-              <strong>₹{Number(invoiceToVoid.grand_total || 0).toFixed(2)}</strong> will reverse the transaction and record an audit log.
-            </p>
             <div>
               <label className="text-xs font-bold" style={{ display: 'block', marginBottom: '6px' }}>
-                Reason for Void / Cancellation *
+                Reason for Deletion *
               </label>
               <textarea
                 className="input"
                 style={{ width: '100%', height: '80px', padding: '8px' }}
-                placeholder="e.g. Order cancelled by customer before food preparation"
-                value={voidReason}
-                onChange={(e) => setVoidReason(e.target.value)}
+                placeholder="e.g. Test entry by cashier / Duplicate order error"
+                value={deleteReason}
+                onChange={(e) => setDeleteReason(e.target.value)}
+                disabled={deleting}
               />
             </div>
           </div>

@@ -813,4 +813,35 @@ describe('Phase 6 Priority 4 — Printer Operations, KOT Controls & Receipt Accu
       process.env.NODE_ENV = origEnv;
     }
   });
+
+  // ===========================================================================
+  // TEST 18: TCP Socket Test Connection Endpoint & Validation
+  // ===========================================================================
+  it('18. Enforces authorization, tenant isolation, and reachability reporting for test-connection', async () => {
+    // 1. Cashier role without printer:manage permission is rejected with 403
+    const forbiddenRes = await apiRequest(`/api/v1/printers/${defaultKitchenPrinterId}/test-connection`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${cashierToken}` }
+    });
+    assert.equal(forbiddenRes.status, 403);
+
+    // 2. Non-existent or foreign tenant printer returns 404
+    const foreignPrinterId = crypto.randomUUID();
+    const notFoundRes = await apiRequest(`/api/v1/printers/${foreignPrinterId}/test-connection`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${adminToken}` }
+    });
+    assert.equal(notFoundRes.status, 404);
+
+    // 3. Admin user testing kitchen printer connection (unreachable network IP returns success:false with clean error)
+    const testConnRes = await apiRequest(`/api/v1/printers/${defaultKitchenPrinterId}/test-connection`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${adminToken}` }
+    });
+    assert.equal(testConnRes.status, 200);
+    assert.equal(typeof testConnRes.body.data.reachable, 'boolean');
+    assert.equal(testConnRes.body.data.printerId, defaultKitchenPrinterId);
+    assert.equal(testConnRes.body.data.port, 9100);
+    assert.ok(testConnRes.body.data.durationMs >= 0);
+  });
 });

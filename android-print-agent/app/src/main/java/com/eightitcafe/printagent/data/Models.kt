@@ -101,7 +101,8 @@ data class PrintJobPayload(
     val cancellationReason: String? = null,
     val printerName: String? = null,
     val batchNumber: Int? = null,
-    val isAdditional: Boolean = false
+    val isAdditional: Boolean = false,
+    val customerName: String? = null
 ) {
     companion object {
         fun fromJson(json: JSONObject): PrintJobPayload {
@@ -129,6 +130,15 @@ data class PrintJobPayload(
                 for (i in 0 until testArray.length()) {
                     testList.add(testArray.optString(i))
                 }
+            }
+
+            val parsedCustomerName = if (!json.isNull("customerName")) {
+                json.optString("customerName", null)
+            } else if (!json.isNull("customer")) {
+                val custObj = json.optJSONObject("customer")
+                custObj?.optString("name", null)
+            } else {
+                null
             }
 
             return PrintJobPayload(
@@ -159,7 +169,8 @@ data class PrintJobPayload(
                 cancellationReason = if (json.isNull("cancellationReason")) null else json.optString("cancellationReason", null),
                 printerName = if (json.isNull("printerName")) null else json.optString("printerName", null),
                 batchNumber = if (json.isNull("batchNumber")) null else json.optInt("batchNumber"),
-                isAdditional = json.optBoolean("isAdditional", false)
+                isAdditional = json.optBoolean("isAdditional", false),
+                customerName = parsedCustomerName
             )
         }
     }

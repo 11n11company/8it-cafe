@@ -24,6 +24,7 @@ export function ProductCategoryAdmin({ initialTab = 'products' } = {}) {
   // Filters for products
   const [filterBrandId, setFilterBrandId] = useState('');
   const [filterCatId, setFilterCatId] = useState('');
+  const [filterStatus, setFilterStatus] = useState('all');
   const [search, setSearch] = useState('');
 
   // Category Modal State
@@ -77,18 +78,26 @@ export function ProductCategoryAdmin({ initialTab = 'products' } = {}) {
   const loadProducts = useCallback(async () => {
     setLoading(true);
     try {
-      const pRes = await api.products.list({
+      const params = {
         brand_id: filterBrandId,
         category_id: filterCatId,
-        search
-      });
+        search,
+        include_inactive: true,
+        limit: 100
+      };
+      if (filterStatus === 'active') {
+        params.is_active = true;
+      } else if (filterStatus === 'inactive') {
+        params.is_active = false;
+      }
+      const pRes = await api.products.list(params);
       setProducts(pRes?.data || []);
     } catch (err) {
       setError(err.message || 'Failed to load products');
     } finally {
       setLoading(false);
     }
-  }, [filterBrandId, filterCatId, search]);
+  }, [filterBrandId, filterCatId, filterStatus, search]);
 
   useEffect(() => {
     loadReferenceData();
@@ -189,9 +198,10 @@ export function ProductCategoryAdmin({ initialTab = 'products' } = {}) {
     const chosenBrand = activeBrands[0] || brands[0];
     const defaultBrand = chosenBrand?.id || '';
     const brandCats = categories.filter(c => (c.brand_id || c.brandId) === defaultBrand);
+    const activeBrandCats = brandCats.filter(c => c.isActive !== false && c.is_active !== false);
     setProductForm({
       brand_id: defaultBrand,
-      category_id: brandCats[0]?.id || '',
+      category_id: (activeBrandCats[0] || brandCats[0])?.id || '',
       item_code: '',
       name: '',
       description: '',
@@ -360,12 +370,36 @@ export function ProductCategoryAdmin({ initialTab = 'products' } = {}) {
                 className="form-control"
                 value={filterCatId}
                 onChange={(e) => setFilterCatId(e.target.value)}
-                style={{ maxWidth: '200px' }}
+                style={{ maxWidth: '220px' }}
               >
                 <option value="">All Categories</option>
                 {categories
                   .filter(c => !filterBrandId || (c.brand_id || c.brandId) === filterBrandId)
-                  .map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                  .map(c => {
+                    const bName = c.brand_name || c.brandName || brands.find(b => b.id === (c.brand_id || c.brandId))?.name;
+                    const isInactive = c.isActive === false || c.is_active === false;
+                    const metaParts = [];
+                    if (!filterBrandId && bName) metaParts.push(bName);
+                    if (isInactive) metaParts.push('Inactive');
+                    const suffix = metaParts.length > 0 ? ` (${metaParts.join(', ')})` : '';
+                    return (
+                      <option key={c.id} value={c.id}>
+                        {c.name}{suffix}
+                      </option>
+                    );
+                  })}
+              </select>
+
+              <select
+                className="form-control"
+                value={filterStatus}
+                onChange={(e) => setFilterStatus(e.target.value)}
+                style={{ maxWidth: '160px' }}
+                title="Filter by product status"
+              >
+                <option value="all">All Statuses</option>
+                <option value="active">Active Only</option>
+                <option value="inactive">Inactive Only</option>
               </select>
             </div>
 
@@ -628,10 +662,11 @@ export function ProductCategoryAdmin({ initialTab = 'products' } = {}) {
                     onChange={(e) => {
                       const bId = e.target.value;
                       const bCats = categories.filter(c => (c.brand_id || c.brandId) === bId);
+                      const activeBCats = bCats.filter(c => c.isActive !== false && c.is_active !== false);
                       setProductForm({
                         ...productForm,
                         brand_id: bId,
-                        category_id: bCats[0]?.id || ''
+                        category_id: (activeBCats[0] || bCats[0])?.id || ''
                       });
                     }}
                   >
@@ -659,7 +694,14 @@ export function ProductCategoryAdmin({ initialTab = 'products' } = {}) {
                     ) : (
                       categories
                         .filter(c => (c.brand_id || c.brandId) === productForm.brand_id)
-                        .map(c => <option key={c.id} value={c.id}>{c.name}</option>)
+                        .map(c => {
+                          const isInactive = c.isActive === false || c.is_active === false;
+                          return (
+                            <option key={c.id} value={c.id} disabled={isInactive}>
+                              {c.name}{isInactive ? ' (Inactive — activate in Categories first)' : ''}
+                            </option>
+                          );
+                        })
                     )}
                   </select>
                 </div>
@@ -677,7 +719,14 @@ export function ProductCategoryAdmin({ initialTab = 'products' } = {}) {
                   ) : (
                     categories
                       .filter(c => (c.brand_id || c.brandId) === productForm.brand_id)
-                      .map(c => <option key={c.id} value={c.id}>{c.name}</option>)
+                      .map(c => {
+                        const isInactive = c.isActive === false || c.is_active === false;
+                        return (
+                          <option key={c.id} value={c.id} disabled={isInactive}>
+                            {c.name}{isInactive ? ' (Inactive — activate in Categories first)' : ''}
+                          </option>
+                        );
+                      })
                   )}
                 </select>
               </div>

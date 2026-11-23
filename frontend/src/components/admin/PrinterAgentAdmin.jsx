@@ -103,6 +103,7 @@ export function PrinterAgentAdmin() {
   });
   const [savingPrinter, setSavingPrinter] = useState(false);
   const [testingPrinterId, setTestingPrinterId] = useState(null);
+  const [testingConnPrinterId, setTestingConnPrinterId] = useState(null);
 
   const loadData = useCallback(async () => {
     try {
@@ -292,17 +293,37 @@ export function PrinterAgentAdmin() {
     }
   };
 
-  // 4. Test Print
+  // 4. Test Print (Sends physical print slip)
   const handleTestPrint = async (printer) => {
     setTestingPrinterId(printer.id);
     try {
       const res = await api.printers.testPrint(printer.id);
-      setNotice(`Test print slip queued for "${printer.printerName}" (Job ID: ${res?.data?.jobId || 'OK'}).`);
+      setNotice(`Test print slip queued for "${printer.printerName || printer.printer_name}" (Job ID: ${res?.data?.jobId || 'OK'}). Visual confirmation of printout required.`);
       setTimeout(() => setNotice(null), 5000);
     } catch (err) {
       alert(err.message || 'Failed to enqueue test print job.');
     } finally {
       setTestingPrinterId(null);
+    }
+  };
+
+  // 4b. Test Connection (Verifies TCP socket handshake only; no physical print)
+  const handleTestConnection = async (printer) => {
+    setTestingConnPrinterId(printer.id);
+    try {
+      const res = await api.printers.testConnection(printer.id);
+      const data = res?.data || {};
+      if (data.reachable || data.success) {
+        setNotice(data.message || `✓ TCP socket handshake to "${printer.printerName || printer.printer_name}" succeeded.`);
+      } else {
+        setError(`✗ Connection to "${printer.printerName || printer.printer_name}" failed: ${data.message || data.errorCode}`);
+      }
+      setTimeout(() => { setNotice(null); setError(null); }, 6000);
+    } catch (err) {
+      setError(err.message || 'Failed to test printer socket connection.');
+      setTimeout(() => setError(null), 6000);
+    } finally {
+      setTestingConnPrinterId(null);
     }
   };
 
@@ -760,18 +781,30 @@ export function PrinterAgentAdmin() {
                 </div>
                 <div style={{ display: 'flex', justifyContent: 'space-between' }}>
                   <span className="text-muted">Connection Type:</span>
-                  <span>Raw TCP/IP Socket (Port 9100)</span>
+                  <span>Raw TCP/IP Socket (Port {kitchenPrinter?.port || 9100})</span>
                 </div>
               </div>
             </div>
 
-            <div style={{ display: 'flex', gap: '8px', borderTop: '1px solid var(--color-border)', paddingTop: '14px' }}>
+            <div style={{ display: 'flex', gap: '8px', borderTop: '1px solid var(--color-border)', paddingTop: '14px', flexWrap: 'wrap' }}>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => kitchenPrinter && handleTestConnection(kitchenPrinter)}
+                disabled={!kitchenPrinter || testingConnPrinterId === kitchenPrinter?.id}
+                title="Verify TCP socket reachability on local network"
+                style={{ flex: 1, minWidth: '130px' }}
+              >
+                <Wifi size={14} style={{ marginRight: '6px' }} />
+                {testingConnPrinterId === kitchenPrinter?.id ? 'Testing...' : 'Test Connection'}
+              </Button>
               <Button
                 variant="outline"
                 size="sm"
                 onClick={() => kitchenPrinter && handleTestPrint(kitchenPrinter)}
                 disabled={!kitchenPrinter || testingPrinterId === kitchenPrinter?.id}
-                style={{ flex: 1 }}
+                title="Send test slip to physical printer buffer"
+                style={{ flex: 1, minWidth: '130px' }}
               >
                 <FileText size={14} style={{ marginRight: '6px' }} />
                 {testingPrinterId === kitchenPrinter?.id ? 'Sending...' : 'Send Test Slip'}
@@ -859,18 +892,30 @@ export function PrinterAgentAdmin() {
                 </div>
                 <div style={{ display: 'flex', justifyContent: 'space-between' }}>
                   <span className="text-muted">Connection Type:</span>
-                  <span>Raw TCP/IP Socket (Port 9100)</span>
+                  <span>Raw TCP/IP Socket (Port {cashierPrinter?.port || 9100})</span>
                 </div>
               </div>
             </div>
 
-            <div style={{ display: 'flex', gap: '8px', borderTop: '1px solid var(--color-border)', paddingTop: '14px' }}>
+            <div style={{ display: 'flex', gap: '8px', borderTop: '1px solid var(--color-border)', paddingTop: '14px', flexWrap: 'wrap' }}>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => cashierPrinter && handleTestConnection(cashierPrinter)}
+                disabled={!cashierPrinter || testingConnPrinterId === cashierPrinter?.id}
+                title="Verify TCP socket reachability on local network"
+                style={{ flex: 1, minWidth: '130px' }}
+              >
+                <Wifi size={14} style={{ marginRight: '6px' }} />
+                {testingConnPrinterId === cashierPrinter?.id ? 'Testing...' : 'Test Connection'}
+              </Button>
               <Button
                 variant="outline"
                 size="sm"
                 onClick={() => cashierPrinter && handleTestPrint(cashierPrinter)}
                 disabled={!cashierPrinter || testingPrinterId === cashierPrinter?.id}
-                style={{ flex: 1 }}
+                title="Send test slip to physical printer buffer"
+                style={{ flex: 1, minWidth: '130px' }}
               >
                 <FileText size={14} style={{ marginRight: '6px' }} />
                 {testingPrinterId === cashierPrinter?.id ? 'Sending...' : 'Send Test Slip'}
@@ -937,16 +982,32 @@ export function PrinterAgentAdmin() {
                       <span className="text-muted">Paper Width:</span>
                       <span>{p.paperWidthMm || p.paper_width_mm || 80} mm</span>
                     </div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                      <span className="text-muted">Connection Type:</span>
+                      <span>Raw TCP/IP Socket (Port {p.port || 9100})</span>
+                    </div>
                   </div>
                 </div>
 
-                <div style={{ display: 'flex', gap: '8px', borderTop: '1px solid var(--color-border)', paddingTop: '14px' }}>
+                <div style={{ display: 'flex', gap: '8px', borderTop: '1px solid var(--color-border)', paddingTop: '14px', flexWrap: 'wrap' }}>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => handleTestConnection(p)}
+                    disabled={testingConnPrinterId === p.id}
+                    title="Verify TCP socket reachability on local network"
+                    style={{ flex: 1, minWidth: '130px' }}
+                  >
+                    <Wifi size={14} style={{ marginRight: '6px' }} />
+                    {testingConnPrinterId === p.id ? 'Testing...' : 'Test Connection'}
+                  </Button>
                   <Button
                     variant="outline"
                     size="sm"
                     onClick={() => handleTestPrint(p)}
                     disabled={testingPrinterId === p.id}
-                    style={{ flex: 1 }}
+                    title="Send test slip to physical printer buffer"
+                    style={{ flex: 1, minWidth: '130px' }}
                   >
                     <FileText size={14} style={{ marginRight: '6px' }} />
                     {testingPrinterId === p.id ? 'Sending...' : 'Send Test Slip'}

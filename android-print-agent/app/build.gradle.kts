@@ -9,7 +9,7 @@ android {
 
     defaultConfig {
         applicationId = "com.eightitcafe.printagent"
-        minSdk = 30 // Android 11+
+        minSdk = 29 // Android 10+ (BYJU'S LearnOS tablet compatibility)
         targetSdk = 34
         versionCode = 1
         versionName = "1.0.0"

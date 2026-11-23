@@ -231,6 +231,7 @@ async function getDashboardSummary(companyId, options = {}) {
         WHERE i.company_id = $1
           AND ii.brand_id = $2
           AND i.payment_status NOT IN ('VOIDED', 'PENDING')
+          AND (i.is_deleted IS FALSE OR i.is_deleted IS NULL)
           AND i.created_at >= $3
           AND i.created_at < $4;
       `;
@@ -265,6 +266,7 @@ async function getDashboardSummary(companyId, options = {}) {
             JOIN invoices inv ON ii.invoice_id = inv.id
             WHERE inv.company_id = $1
               AND inv.payment_status NOT IN ('VOIDED', 'PENDING')
+              AND (inv.is_deleted IS FALSE OR inv.is_deleted IS NULL)
               AND inv.created_at >= $2
               AND inv.created_at < $3
           ), 0)::int as items_sold,
@@ -280,6 +282,7 @@ async function getDashboardSummary(companyId, options = {}) {
         FROM invoices
         WHERE company_id = $1
           AND payment_status NOT IN ('VOIDED', 'PENDING')
+          AND (is_deleted IS FALSE OR is_deleted IS NULL)
           AND created_at >= $2
           AND created_at < $3;
       `;
@@ -399,6 +402,23 @@ async function getDashboardSummary(companyId, options = {}) {
   const pendingInvoices = {
     count: pendingRes.rows[0].pending_count,
     amount: Number(pendingRes.rows[0].pending_amount).toFixed(2)
+  };
+
+  // Deleted Invoices for Selected Period (Soft-deleted audit tracking)
+  const deletedQuery = `
+    SELECT
+      COUNT(*)::int as deleted_count,
+      COALESCE(SUM(grand_total), 0.00)::numeric(14,2) as deleted_amount
+    FROM invoices
+    WHERE company_id = $1
+      AND is_deleted = TRUE
+      AND created_at >= $2
+      AND created_at < $3;
+  `;
+  const deletedRes = await pool.query(deletedQuery, [companyId, selectedRange.start, selectedRange.end]);
+  const deletedInvoices = {
+    count: deletedRes.rows[0].deleted_count,
+    amount: Number(deletedRes.rows[0].deleted_amount).toFixed(2)
   };
 
   // Comparisons percentage change helper
@@ -727,6 +747,7 @@ async function getDashboardSummary(companyId, options = {}) {
     payments: paymentTotals,
     refunds: selectedRefunds,
     pendingInvoices,
+    deletedInvoices,
     hourlySales,
     brandPerformance,
     orderTypeBreakdown,

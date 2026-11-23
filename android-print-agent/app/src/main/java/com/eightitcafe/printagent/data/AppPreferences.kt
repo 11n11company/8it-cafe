@@ -105,4 +105,28 @@ class AppPreferences(context: Context) {
 
     val isCashierDevice: Boolean
         get() = !isWaiterDevice
+
+    fun getKitchenPrinterConfig(): PrinterDeviceConfig {
+        return PrinterDeviceConfig(
+            displayName = "Kitchen Order Ticket Printer",
+            role = "KITCHEN_KOT",
+            connectionType = "WIFI_TCP",
+            ipAddress = kitchenPrinterIp,
+            port = kitchenPrinterPort,
+            paperWidthMm = 80,
+            charactersPerLine = 48
+        )
+    }
+
+    fun getCashierPrinterConfig(): PrinterDeviceConfig {
+        return PrinterDeviceConfig(
+            displayName = "Cashier Receipt Printer",
+            role = "COUNTER_RECEIPT",
+            connectionType = "WIFI_TCP",
+            ipAddress = cashierPrinterIp,
+            port = cashierPrinterPort,
+            paperWidthMm = 80,
+            charactersPerLine = 48
+        )
+    }
 }

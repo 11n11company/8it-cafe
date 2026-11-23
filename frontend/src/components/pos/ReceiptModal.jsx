@@ -25,6 +25,12 @@ export function ReceiptModal({ isOpen, onClose, invoice, company }) {
 
   const isPaid = invoice.payment_status === 'PAID';
   const isReprint = Boolean(invoice.isReprint || invoice.is_reprint);
+  const customerName = (
+    invoice.customer_name ||
+    invoice.customerName ||
+    (invoice.customer && invoice.customer.name) ||
+    ''
+  ).trim();
 
   const handlePrint = () => {
     if (!isPaid) {
@@ -178,6 +184,12 @@ export function ReceiptModal({ isOpen, onClose, invoice, company }) {
             </span>
           </div>
 
+          {customerName && (
+            <div style={{ fontSize: '12px', fontWeight: 'bold', borderBottom: '1px dashed var(--color-border-strong)', paddingBottom: '8px', marginBottom: '10px' }}>
+              CUSTOMER: {customerName}
+            </div>
+          )}
+
           {/* Line Items Table */}
           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px', marginBottom: '8px' }}>
             <thead>
@@ -326,6 +338,12 @@ export function ReceiptModal({ isOpen, onClose, invoice, company }) {
           <span>Cashier: {invoice.cashier_name_snapshot || invoice.created_by_name || 'Staff'}</span>
           <span>{new Date(invoice.created_at || Date.now()).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}</span>
         </div>
+
+        {customerName && (
+          <div style={{ fontSize: '11px', fontWeight: 'bold', margin: '4px 0' }}>
+            CUSTOMER: {customerName}
+          </div>
+        )}
 
         <div className="receipt-divider"></div>
 

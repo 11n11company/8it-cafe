@@ -504,18 +504,29 @@ export const api = {
     getInvoice: (id) => request(`/billing/invoices/${id}`),
 
     // Atomic Checkout & Settlement
-    checkoutInvoice: (id, tenders, idempotencyKey) => {
+    checkoutInvoice: (id, tendersOrPayload, idempotencyKey) => {
       const headers = { 'X-Idempotency-Key': idempotencyKey || generateUUID() };
+      const body = Array.isArray(tendersOrPayload)
+        ? { tenders: tendersOrPayload }
+        : (tendersOrPayload && tendersOrPayload.tenders ? tendersOrPayload : { tenders: [tendersOrPayload] });
       return request(`/billing/invoices/${id}/checkout`, {
         method: 'POST',
         headers,
-        body: { tenders }
+        body
       });
     },
 
     // Void Invoice (Admin / Manager)
     voidInvoice: (id, reason) =>
       request(`/billing/invoices/${id}/void`, { method: 'POST', body: { reason } }),
+
+    // Soft-Delete Invoice (Admin Only - Preserves Financial & Audit Records)
+    deleteInvoice: (id, reason) =>
+      request(`/billing/invoices/${id}/delete`, { method: 'POST', body: { reason } }),
+
+    // Restore Soft-Deleted Invoice (Admin Recovery Path)
+    restoreInvoice: (id, reason) =>
+      request(`/billing/invoices/${id}/restore`, { method: 'POST', body: { reason } }),
 
     // Refund Invoice (Admin / Manager)
     refundInvoice: (id, refundData) =>
@@ -593,6 +604,11 @@ export const api = {
         body: payload
       });
     },
+    verifyParcelDispatch: (payload) =>
+      request('/kot/parcel/verify-dispatch', {
+        method: 'POST',
+        body: payload
+      }),
     printKot: (invoiceId, idempotencyKey = null) => {
       const headers = {};
       if (idempotencyKey) headers['X-Idempotency-Key'] = idempotencyKey;
@@ -725,6 +741,7 @@ export const api = {
     create: (data) => request('/printers', { method: 'POST', body: data }),
     update: (id, data) => request(`/printers/${id}`, { method: 'PUT', body: data }),
     testPrint: (id) => request(`/printers/${id}/test-print`, { method: 'POST' }),
+    testConnection: (id) => request(`/printers/${id}/test-connection`, { method: 'POST' }),
     getMonitoring: () => request('/printers/monitoring'),
     retryJob: (jobId) => request(`/printers/jobs/${jobId}/retry`, { method: 'POST' }),
     listAgents: () => request('/printers/agents'),

@@ -416,6 +416,8 @@ input[type="radio"] { accent-color: var(--color-primary); width: 18px; height: 1
   justify-content: center;
   padding: 16px;
   background: var(--color-overlay);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
 }
 .ui-modal {
   width: 100%;

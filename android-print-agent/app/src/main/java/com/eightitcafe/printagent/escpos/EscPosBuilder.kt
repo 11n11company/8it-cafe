@@ -1,6 +1,7 @@
 package com.eightitcafe.printagent.escpos
 
 import com.eightitcafe.printagent.data.PrintJobPayload
+import com.eightitcafe.printagent.data.PrinterDeviceConfig
 import java.io.ByteArrayOutputStream
 import java.nio.charset.Charset
 import java.text.SimpleDateFormat
@@ -8,13 +9,30 @@ import java.util.Date
 import java.util.Locale
 
 /**
- * High-performance ESC/POS Binary Command Generator for 80mm Wi-Fi Thermal Printers.
- * Encodes text lines, alignment, font sizing, multi-brand headers, and cutter triggers.
+ * High-performance ESC/POS Binary Command Generator for 80mm and 58mm Thermal Printers.
+ * Printer-independent: generates standard ESC/POS commands with configurable character
+ * encoding, dynamic column sizing, multi-brand headers, and cutter triggers.
  */
-class EscPosBuilder(private val cpl: Int = 48, private val paperWidthMm: Int = 80) {
+class EscPosBuilder(
+    private val cpl: Int = 48,
+    private val paperWidthMm: Int = 80,
+    private val encoding: String = "UTF-8",
+    private val autoCutter: Boolean = true
+) {
+
+    constructor(config: PrinterDeviceConfig) : this(
+        cpl = config.charactersPerLine,
+        paperWidthMm = config.paperWidthMm,
+        encoding = config.characterEncoding,
+        autoCutter = config.autoCutter
+    )
 
     private val stream = ByteArrayOutputStream()
-    private val charset: Charset = Charset.forName("UTF-8")
+    private val charset: Charset = try {
+        Charset.forName(encoding)
+    } catch (_: Exception) {
+        Charset.forName("UTF-8")
+    }
 
     companion object {
         val ESC: Byte = 0x1B
@@ -144,7 +162,11 @@ class EscPosBuilder(private val cpl: Int = 48, private val paperWidthMm: Int = 8
 
     fun cut(): EscPosBuilder {
         feed(3)
-        stream.write(CUT_PAPER)
+        if (autoCutter) {
+            stream.write(CUT_PAPER)
+        } else {
+            feed(2)
+        }
         return this
     }
 
@@ -274,6 +296,10 @@ class EscPosBuilder(private val cpl: Int = 48, private val paperWidthMm: Int = 8
             "DINE-IN (Table: ${payload.tableNumber ?: "N/A"})"
         }
         twoColumns("ORDER: $orderTypeDesc", "CASHIER: ${payload.cashierName ?: "Cashier"}")
+
+        if (!payload.customerName.isNullOrBlank()) {
+            line("CUSTOMER: ${payload.customerName.trim()}")
+        }
 
         if (payload.isReprint) {
             doubleDivider()

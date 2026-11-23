@@ -76,7 +76,7 @@ function createBillingRouter(dependencies = {}) {
         if (err.statusCode) {
           return res.status(err.statusCode).json({
             success: false,
-            error: { code: err.code || 'INVOICE_CREATE_ERROR', message: err.message },
+            error: { code: err.code || 'INVOICE_CREATE_ERROR', message: err.message, details: err.details || null },
             meta: { timestamp, requestId }
           });
         }
@@ -224,7 +224,7 @@ function createBillingRouter(dependencies = {}) {
         if (err.statusCode) {
           return res.status(err.statusCode).json({
             success: false,
-            error: { code: err.code || 'CHECKOUT_ERROR', message: err.message },
+            error: { code: err.code || 'CHECKOUT_ERROR', message: err.message, details: err.details || null },
             meta: { timestamp, requestId }
           });
         }
@@ -302,6 +302,114 @@ function createBillingRouter(dependencies = {}) {
           return res.status(err.statusCode).json({
             success: false,
             error: { code: err.code || 'VOID_ERROR', message: err.message },
+            meta: { timestamp, requestId }
+          });
+        }
+        return next(err);
+      }
+    }
+  );
+
+  /**
+   * POST /api/v1/billing/invoices/:id/delete
+   * DELETE /api/v1/billing/invoices/:id
+   * Soft-deletes an invoice with reason and audit trail (Strictly ADMIN only).
+   */
+  router.post(
+    '/invoices/:id/delete',
+    authenticate,
+    authorizeRoles('ADMIN'),
+    async (req, res, next) => {
+      const timestamp = new Date().toISOString();
+      const requestId = req.id || null;
+
+      try {
+        const companyId = req.tenant.companyId;
+        const userId = req.user.id;
+        const invoiceId = req.params.id;
+
+        const result = await billingService.deleteInvoice(companyId, userId, invoiceId, req.body);
+
+        return res.status(200).json({
+          success: true,
+          data: result,
+          meta: { timestamp, requestId }
+        });
+      } catch (err) {
+        if (err.statusCode) {
+          return res.status(err.statusCode).json({
+            success: false,
+            error: { code: err.code || 'DELETE_ERROR', message: err.message },
+            meta: { timestamp, requestId }
+          });
+        }
+        return next(err);
+      }
+    }
+  );
+
+  router.delete(
+    '/invoices/:id',
+    authenticate,
+    authorizeRoles('ADMIN'),
+    async (req, res, next) => {
+      const timestamp = new Date().toISOString();
+      const requestId = req.id || null;
+
+      try {
+        const companyId = req.tenant.companyId;
+        const userId = req.user.id;
+        const invoiceId = req.params.id;
+
+        const result = await billingService.deleteInvoice(companyId, userId, invoiceId, req.body);
+
+        return res.status(200).json({
+          success: true,
+          data: result,
+          meta: { timestamp, requestId }
+        });
+      } catch (err) {
+        if (err.statusCode) {
+          return res.status(err.statusCode).json({
+            success: false,
+            error: { code: err.code || 'DELETE_ERROR', message: err.message },
+            meta: { timestamp, requestId }
+          });
+        }
+        return next(err);
+      }
+    }
+  );
+
+  /**
+   * POST /api/v1/billing/invoices/:id/restore
+   * Restores a soft-deleted invoice (Authorized Admin recovery path).
+   */
+  router.post(
+    '/invoices/:id/restore',
+    authenticate,
+    authorizeRoles('ADMIN'),
+    async (req, res, next) => {
+      const timestamp = new Date().toISOString();
+      const requestId = req.id || null;
+
+      try {
+        const companyId = req.tenant.companyId;
+        const userId = req.user.id;
+        const invoiceId = req.params.id;
+
+        const result = await billingService.restoreInvoice(companyId, userId, invoiceId, req.body);
+
+        return res.status(200).json({
+          success: true,
+          data: result,
+          meta: { timestamp, requestId }
+        });
+      } catch (err) {
+        if (err.statusCode) {
+          return res.status(err.statusCode).json({
+            success: false,
+            error: { code: err.code || 'RESTORE_ERROR', message: err.message },
             meta: { timestamp, requestId }
           });
         }

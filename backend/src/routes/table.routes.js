@@ -271,7 +271,7 @@ function createTableRouter(dependencies = {}) {
         const sessionId = req.params.sessionId;
         const cashierId = req.user.id;
 
-        const { tenders, counterCode } = req.body || {};
+        const { tenders, counterCode, customerName, customer_name } = req.body || {};
 
         const checkoutResult = await checkoutTableSession(
           companyId,
@@ -280,7 +280,8 @@ function createTableRouter(dependencies = {}) {
           {
             tenders,
             idempotencyKey,
-            counterCode
+            counterCode,
+            customerName: customerName || customer_name
           },
           dbPool
         );

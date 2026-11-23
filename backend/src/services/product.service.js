@@ -148,6 +148,7 @@ async function listProducts(companyId, filters = {}, dbPool = pool) {
     brandId,
     categoryId,
     isKitchenItem,
+    isActive,
     includeInactive = false,
     search,
     page = 1,
@@ -190,7 +191,11 @@ async function listProducts(companyId, filters = {}, dbPool = pool) {
     params.push(isKitchen);
   }
 
-  if (!includeInactive) {
+  if (isActive !== undefined && isActive !== null && isActive !== '') {
+    const activeBool = isActive === true || isActive === 'true';
+    whereClauses.push(`p.is_active = $${paramIdx++}`);
+    params.push(activeBool);
+  } else if (!includeInactive) {
     whereClauses.push(`p.is_active = TRUE`);
   }
 
@@ -1026,7 +1031,7 @@ async function deleteProduct(companyId, productId, requestingUserId, auditMetada
     // Check if referenced in active table session items
     const tableItemCheck = await client.query(`
       SELECT COUNT(*)::int AS count
-      FROM table_session_items
+      FROM table_order_items
       WHERE product_id = $1;
     `, [productId]);
 

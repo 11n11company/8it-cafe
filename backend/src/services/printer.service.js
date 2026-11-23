@@ -984,6 +984,7 @@ async function enqueueReceiptPrintJob(dbClientOrPool, { companyId, invoiceId, us
     address: invoice.company_address_snapshot,
     stateCode: invoice.company_state_code_snapshot,
     customer: customerDetails,
+    customerName: invoice.customer_name || null,
     missingStatutoryFields,
     invoiceId: invoice.id,
     invoiceNumber: invoice.invoice_number,
@@ -1658,6 +1659,94 @@ async function retryPrintJob(companyId, jobId, userId = null) {
   }
 }
 
+/**
+ * Test network TCP socket connectivity to a physical or Wi-Fi ESC/POS printer.
+ * Performs a TCP handshake to verify IP reachability and open port without sending print data.
+ * NOTE: Successful socket handshake verifies network connectivity only; physical printing is not performed.
+ */
+async function testPrinterConnection({ companyId, printerId }, dbPool = pool) {
+  if (!isUuid(printerId)) {
+    throw new PrinterError('Printer not found.', 'PRINTER_NOT_FOUND', 404);
+  }
+  const res = await dbPool.query(
+    `SELECT id, printer_code, printer_name, printer_role, ip_address, port, is_active
+     FROM printers
+     WHERE id = $1 AND company_id = $2`,
+    [printerId, companyId]
+  );
+  if (res.rows.length === 0) {
+    throw new PrinterError('Printer not found.', 'PRINTER_NOT_FOUND', 404);
+  }
+  const printer = res.rows[0];
+  const ip = (printer.ip_address || '').trim();
+  const port = Number(printer.port) || 9100;
+
+  // Anti-SSRF check: validate network
+  validatePrinterNetwork({ ipAddress: ip, port });
+
+  const startTime = Date.now();
+  return new Promise((resolve) => {
+    const socket = new net.Socket();
+    let isSettled = false;
+
+    const timeout = setTimeout(() => {
+      if (isSettled) return;
+      isSettled = true;
+      socket.destroy();
+      const durationMs = Date.now() - startTime;
+      resolve({
+        success: false,
+        reachable: false,
+        printerId: printer.id,
+        printerName: printer.printer_name,
+        ipAddress: ip,
+        port,
+        durationMs,
+        errorCode: 'SOCKET_TIMEOUT',
+        message: `Connection timed out after 3000ms to ${ip}:${port}. Printer appears offline or unreachable on local network.`
+      });
+    }, 3000);
+
+    socket.connect(port, ip, () => {
+      if (isSettled) return;
+      isSettled = true;
+      clearTimeout(timeout);
+      const durationMs = Date.now() - startTime;
+      socket.destroy();
+      resolve({
+        success: true,
+        reachable: true,
+        printerId: printer.id,
+        printerName: printer.printer_name,
+        printerRole: printer.printer_role,
+        ipAddress: ip,
+        port,
+        durationMs,
+        message: `TCP socket handshake to ${printer.printer_name} (${ip}:${port}) succeeded in ${durationMs}ms. NOTE: This verifies network reachability only; physical printing is not performed.`
+      });
+    });
+
+    socket.on('error', (err) => {
+      if (isSettled) return;
+      isSettled = true;
+      clearTimeout(timeout);
+      socket.destroy();
+      const durationMs = Date.now() - startTime;
+      resolve({
+        success: false,
+        reachable: false,
+        printerId: printer.id,
+        printerName: printer.printer_name,
+        ipAddress: ip,
+        port,
+        durationMs,
+        errorCode: err.code || 'CONNECTION_FAILED',
+        message: `Failed to connect to ${ip}:${port}: ${err.message}`
+      });
+    });
+  });
+}
+
 module.exports = {
   PrinterError,
   DEVICE_TYPES,
@@ -1688,6 +1777,7 @@ module.exports = {
   validateProductionUrlSecurity,
   getPrinterMonitoringData,
   retryPrintJob,
+  testPrinterConnection,
   assignCategoryToPrinter,
   removeCategoryFromPrinter
 };

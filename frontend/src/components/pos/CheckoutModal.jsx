@@ -100,6 +100,7 @@ export function CheckoutModal({
   const [isSplitMode, setIsSplitMode] = useState(false);
   const [splitRows, setSplitRows] = useState([]);
 
+  const [customerName, setCustomerName] = useState('');
   const [paymentMethod, setPaymentMethod] = useState('CASH'); // 'CASH', 'UPI', 'CARD'
   const [cashTendered, setCashTendered] = useState('');
   const [upiRef, setUpiRef] = useState('');
@@ -109,17 +110,27 @@ export function CheckoutModal({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
 
+  // KOT payment guard inside modal
+  const [kotDispatchRequired, setKotDispatchRequired] = useState(false);
+  const [isSendingKot, setIsSendingKot] = useState(false);
+  const [kotError, setKotError] = useState(null);
+  const [kotQueuedNotice, setKotQueuedNotice] = useState(null);
+
   // Idempotency key generated uniquely when modal opens
   const [idempotencyKey, setIdempotencyKey] = useState('');
 
   useEffect(() => {
     if (isOpen) {
       setIdempotencyKey(generateUUID());
+      setCustomerName('');
       setCashTendered(grandTotal > 0 ? grandTotal.toFixed(2) : '');
       setPaymentMethod('CASH');
       setUpiRef('');
       setCardRef('');
       setIsSplitMode(false);
+      setKotDispatchRequired(false);
+      setIsSendingKot(false);
+      setKotError(null);
 
       const half = grandTotal > 0 ? (grandTotal / 2).toFixed(2) : '0.00';
       const rem = grandTotal > 0 ? (grandTotal - parseFloat(half)).toFixed(2) : '0.00';
@@ -268,12 +279,13 @@ export function CheckoutModal({
       }
 
       let settledInvoice = null;
+      const cleanCustomerName = customerName.trim() || null;
 
       // If checking out an active table dining session
       if (activeTableSessionId) {
         const checkoutRes = await api.tables.checkout(
           activeTableSessionId,
-          { tenders },
+          { tenders, customerName: cleanCustomerName },
           idempotencyKey
         );
         settledInvoice = checkoutRes.data?.invoice || checkoutRes.invoice || checkoutRes.data || checkoutRes;
@@ -281,7 +293,7 @@ export function CheckoutModal({
         // If checking out an existing resumed draft invoice
         const checkoutRes = await api.billing.checkoutInvoice(
           activeDraftInvoiceId,
-          tenders,
+          { tenders, customerName: cleanCustomerName },
           idempotencyKey
         );
         settledInvoice = checkoutRes.data || checkoutRes;
@@ -298,7 +310,8 @@ export function CheckoutModal({
             items: itemsPayload,
             tenders,
             orderType: orderType || 'PARCEL',
-            parcelOrderNumber: parcelOrderNumber || null
+            parcelOrderNumber: parcelOrderNumber || null,
+            customerName: cleanCustomerName
           },
           idempotencyKey
         );
@@ -313,14 +326,57 @@ export function CheckoutModal({
         onCheckoutSuccess(settledInvoice);
       }
     } catch (err) {
-      setError(err.message || 'Checkout failed. Please try again.');
+      if (err.code === 'KOT_DISPATCH_REQUIRED') {
+        setKotDispatchRequired(true);
+        setError('Kitchen ticket has not been sent. Please send the KOT before completing payment.');
+      } else {
+        setError(err.message || 'Checkout failed. Please try again.');
+      }
     } finally {
       setLoading(false);
     }
   };
 
+  const handleSendKotFromCheckout = async () => {
+    setIsSendingKot(true);
+    setKotError(null);
+    setKotQueuedNotice(null);
+    try {
+      const payload = {
+        parcelOrderNumber,
+        invoiceId: activeDraftInvoiceId || null,
+        items: cartItems.map((i) => ({
+          productId: i.product.id,
+          quantity: i.quantity,
+          notes: i.notes || null
+        }))
+      };
+      const res = await api.kot.sendParcelKot(payload);
+      if (res?.data?.printerOnline === false || (res?.data?.message && res.data.message.includes('waiting for kitchen printer'))) {
+        setKotQueuedNotice('KOT queued — waiting for kitchen printer');
+        setTimeout(() => {
+          setKotDispatchRequired(false);
+          setKotError(null);
+          setError(null);
+          setKotQueuedNotice(null);
+        }, 1200);
+      } else {
+        setKotDispatchRequired(false);
+        setKotError(null);
+        setError(null);
+      }
+      // After successful KOT dispatch, allow payment to continue
+    } catch (err) {
+      setKotError(err.message || 'Kitchen printer is unavailable. Please check kitchen printer connection and retry.');
+    } finally {
+      setIsSendingKot(false);
+    }
+  };
+
   const isCheckoutDisabled =
     loading ||
+    isSendingKot ||
+    kotDispatchRequired ||
     (!isSplitMode && paymentMethod === 'CASH' && isCashInsufficient) ||
     (isSplitMode && (!isSplitBalanced || hasInvalidSplitAmount || hasCashShortageInSplit));
 
@@ -362,13 +418,83 @@ export function CheckoutModal({
       }
     >
       <div className="pay-body">
-        {error && <Alert type="error" message={error} />}
+        {kotDispatchRequired ? (
+          <div style={{ marginBottom: '16px', border: '1px solid #f59e0b', borderRadius: '8px', padding: '14px', background: '#fffbeb' }}>
+            <Alert
+              type="warning"
+              message="Kitchen ticket has not been sent. Please send the KOT before completing payment."
+            />
+            {kotError && (
+              <div style={{ marginTop: '10px' }}>
+                <Alert type="error" title="Kitchen Printer Error" message={kotError} />
+              </div>
+            )}
+            {kotQueuedNotice && (
+              <div style={{ marginTop: '10px' }}>
+                <Alert type="info" message={kotQueuedNotice} />
+              </div>
+            )}
+            <div style={{ display: 'flex', gap: '10px', marginTop: '12px', justifyContent: 'flex-end' }}>
+              <button
+                type="button"
+                className="pay-btn pay-btn--cancel"
+                onClick={onClose}
+                disabled={isSendingKot}
+              >
+                Cancel and return to order
+              </button>
+              <button
+                type="button"
+                className="pay-btn pay-btn--primary"
+                onClick={handleSendKotFromCheckout}
+                disabled={isSendingKot}
+              >
+                {isSendingKot ? 'Sending KOT...' : (kotError ? 'Retry Send to KOT' : 'Send to KOT')}
+              </button>
+            </div>
+          </div>
+        ) : (
+          error && <Alert type="error" message={error} />
+        )}
 
-        {/* Total payable */}
         {/* Total payable */}
         <div className="pay-total">
           <span>Total Payable</span>
           <strong>{formatINR(grandTotal)}</strong>
+        </div>
+
+        {/* Customer Name input: directly below Total Payable and above the Single Payment / Split Tender Payment selector */}
+        <div className="customer-name-field" style={{ marginBottom: '14px' }}>
+          <label
+            htmlFor="checkout-customer-name"
+            style={{
+              display: 'block',
+              fontSize: '0.82rem',
+              fontWeight: 600,
+              color: '#334155',
+              marginBottom: '6px'
+            }}
+          >
+            Customer Name
+          </label>
+          <input
+            id="checkout-customer-name"
+            type="text"
+            className="input"
+            value={customerName}
+            onChange={(e) => setCustomerName(e.target.value)}
+            placeholder="Enter customer name (optional)"
+            style={{
+              width: '100%',
+              minHeight: '44px',
+              padding: '10px 14px',
+              fontSize: '0.95rem',
+              borderRadius: '8px',
+              border: '1px solid #CBD5E1',
+              backgroundColor: '#FFFFFF',
+              boxSizing: 'border-box'
+            }}
+          />
         </div>
 
         {/* Payment mode toggle: Single vs Split */}

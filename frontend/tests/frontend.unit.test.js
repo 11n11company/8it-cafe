@@ -1239,14 +1239,12 @@ describe('Frontend POS & Administration Interface Tests', () => {
       assert.ok(backupCode.includes('cafe_cloud_pos_recovery'), 'Identifies sandbox recovery database');
     });
 
-    it('22.4 AdminDashboard wires Security & Audit and Backup & Recovery in MANAGEMENT nav', () => {
+    it('22.4 AdminDashboard removes Security & Audit and Backup & Recovery from sidebar navigation', () => {
       const dashboardCode = fs.readFileSync(path.join(__dirname, '../src/components/admin/AdminDashboard.jsx'), 'utf8');
-      assert.ok(dashboardCode.includes('security_audit: {'), 'PAGE_META includes security_audit');
-      assert.ok(dashboardCode.includes('backup_recovery: {'), 'PAGE_META includes backup_recovery');
-      assert.ok(dashboardCode.includes("activeTab === 'security_audit'"), 'Sidebar nav for security_audit');
-      assert.ok(dashboardCode.includes("activeTab === 'backup_recovery'"), 'Sidebar nav for backup_recovery');
-      assert.ok(dashboardCode.includes('<AuditLogAdmin />'), 'Renders AuditLogAdmin');
-      assert.ok(dashboardCode.includes('<BackupRecoveryAdmin />'), 'Renders BackupRecoveryAdmin');
+      assert.ok(!dashboardCode.includes("activeTab === 'security_audit'"), 'Sidebar nav must not include security_audit');
+      assert.ok(!dashboardCode.includes("activeTab === 'backup_recovery'"), 'Sidebar nav must not include backup_recovery');
+      assert.ok(!dashboardCode.includes('<AuditLogAdmin />'), 'Must not mount AuditLogAdmin');
+      assert.ok(!dashboardCode.includes('<BackupRecoveryAdmin />'), 'Must not mount BackupRecoveryAdmin');
     });
   });
 
@@ -1320,6 +1318,199 @@ describe('Frontend POS & Administration Interface Tests', () => {
       assert.ok(modalCode.includes("setNewPaymentMethod('UPI')"), 'Provides UPI option');
       assert.ok(modalCode.includes("setNewPaymentMethod('CARD')"), 'Provides CARD option');
       assert.ok(modalCode.includes('api.billing.changePaymentMode'), 'Calls api.billing.changePaymentMode on confirm');
+    });
+  });
+
+  // ==========================================================================
+  // SUITE 25: ADMIN INVOICE SOFT DELETION & FINANCIAL AUDIT PRESERVATION
+  // ==========================================================================
+  describe('25. Admin Invoice Soft Deletion & Financial Audit Preservation', () => {
+    it('25.1 api.billing exposes deleteInvoice and restoreInvoice methods', () => {
+      const apiCode = fs.readFileSync(path.join(__dirname, '../src/services/api.js'), 'utf8');
+      assert.ok(apiCode.includes('deleteInvoice: (id, reason) =>'), 'api.billing must define deleteInvoice');
+      assert.ok(apiCode.includes('/billing/invoices/${id}/delete'), 'deleteInvoice must target /delete endpoint');
+      assert.ok(apiCode.includes('restoreInvoice: (id, reason) =>'), 'api.billing must define restoreInvoice');
+      assert.ok(apiCode.includes('/billing/invoices/${id}/restore'), 'restoreInvoice must target /restore endpoint');
+    });
+
+    it('25.2 Badge component supports DELETED status tone', () => {
+      const badgeCode = fs.readFileSync(path.join(__dirname, '../src/components/common/Badge.jsx'), 'utf8');
+      assert.ok(badgeCode.includes("DELETED: 'danger'"), 'Badge must map DELETED status to danger tone');
+    });
+
+    it('25.3 AdminDashboard replaces Void with red destructive Delete button and renders Receipt button', () => {
+      const adminCode = fs.readFileSync(path.join(__dirname, '../src/components/admin/AdminDashboard.jsx'), 'utf8');
+      assert.ok(adminCode.includes('Delete') && adminCode.includes('saas-pill-btn danger'), 'Admin table must render red destructive Delete button');
+      assert.ok(adminCode.includes('handleDeleteInvoice'), 'Must define handleDeleteInvoice handler');
+      assert.ok(adminCode.includes('setSelectedInvoiceForReceipt'), 'Receipt view action must remain intact');
+    });
+
+    it('25.4 AdminDashboard provides Deleted tab filter and confirmation modal with reason prompt', () => {
+      const adminCode = fs.readFileSync(path.join(__dirname, '../src/components/admin/AdminDashboard.jsx'), 'utf8');
+      assert.ok(adminCode.includes("setInvoiceFilter('DELETED')"), 'Filter buttons must include Deleted filter');
+      assert.ok(adminCode.includes('invoiceToDelete &&'), 'Must render Delete Confirmation Modal');
+      assert.ok(!adminCode.includes('Soft Deletion & Statutory Audit Notice'), 'Soft-deletion warning box must be removed from modal');
+      assert.ok(adminCode.includes('Reason for Deletion *'), 'Must prompt for mandatory deletion reason');
+    });
+
+    it('25.5 InvoiceHistoryModal provides Admin Delete Invoice action and soft delete confirmation modal', () => {
+      const modalCode = fs.readFileSync(path.join(__dirname, '../src/components/pos/InvoiceHistoryModal.jsx'), 'utf8');
+      assert.ok(modalCode.includes('isAdmin && !selectedInvoice.is_deleted && ('), 'Admin can delete invoice if not already deleted');
+      assert.ok(modalCode.includes('Delete Invoice'), 'Must provide Delete Invoice action');
+      assert.ok(modalCode.includes('deleteModalOpen && selectedInvoice'), 'Must render Delete Confirmation Modal');
+      assert.ok(modalCode.includes('api.billing.deleteInvoice'), 'Calls api.billing.deleteInvoice');
+    });
+  });
+
+  // ==========================================================================
+  // SUITE 26: PARCEL KOT PAYMENT GUARD & DISPATCH SAFEGUARD
+  // ==========================================================================
+  describe('26. Parcel KOT Payment Guard & Kitchen Dispatch Safeguard', () => {
+    it('26.1 api.kot exposes verifyParcelDispatch and sendParcelKot methods', () => {
+      const apiCode = fs.readFileSync(path.join(__dirname, '../src/services/api.js'), 'utf8');
+      assert.ok(apiCode.includes('verifyParcelDispatch: (payload) =>'), 'api.kot must define verifyParcelDispatch');
+      assert.ok(apiCode.includes('/kot/parcel/verify-dispatch'), 'verifyParcelDispatch must target /kot/parcel/verify-dispatch');
+      assert.ok(apiCode.includes('sendParcelKot: (payload, idempotencyKey = null) =>'), 'api.kot must define sendParcelKot');
+    });
+
+    it('26.2 POSScreen verifies kitchen item dispatch before opening checkout for parcel orders', () => {
+      const posCode = fs.readFileSync(path.join(__dirname, '../src/components/pos/POSScreen.jsx'), 'utf8');
+      assert.ok(posCode.includes('handleProceedToPayment'), 'POSScreen must define handleProceedToPayment');
+      assert.ok(posCode.includes('api.kot.verifyParcelDispatch'), 'Calls api.kot.verifyParcelDispatch before checkout');
+      assert.ok(posCode.includes('i.product.is_kitchen_item'), 'Checks for kitchen-eligible items');
+    });
+
+    it('26.3 POSScreen displays exact mandatory warning and dual actions (Send to KOT & Cancel and return to order)', () => {
+      const posCode = fs.readFileSync(path.join(__dirname, '../src/components/pos/POSScreen.jsx'), 'utf8');
+      assert.ok(
+        posCode.includes('Kitchen ticket has not been sent. Please send the KOT before completing payment.'),
+        'Must display exact required warning message'
+      );
+      assert.ok(posCode.includes('Send to KOT'), 'Must provide Send to KOT action');
+      assert.ok(posCode.includes('Cancel and return to order'), 'Must provide Cancel and return to order action');
+      assert.ok(posCode.includes('kotGuardModalOpen &&'), 'Must render KOT Guard Modal');
+    });
+
+    it('26.4 CheckoutModal catches KOT_DISPATCH_REQUIRED and renders retry and return actions', () => {
+      const modalCode = fs.readFileSync(path.join(__dirname, '../src/components/pos/CheckoutModal.jsx'), 'utf8');
+      assert.ok(modalCode.includes("err.code === 'KOT_DISPATCH_REQUIRED'"), 'Catches KOT_DISPATCH_REQUIRED code');
+      assert.ok(
+        modalCode.includes('Kitchen ticket has not been sent. Please send the KOT before completing payment.'),
+        'Must display warning inside modal'
+      );
+      assert.ok(modalCode.includes('handleSendKotFromCheckout'), 'Must provide KOT dispatch retry action');
+      assert.ok(modalCode.includes('Cancel and return to order'), 'Must provide Cancel and return to order action');
+    });
+  });
+
+  describe('Suite 27: Kitchen Ticket Required Modal Redesign', () => {
+    it('27.1 POSScreen renders redesigned modal header with ChefHat icon, title, subtitle and close button', () => {
+      const posCode = fs.readFileSync(path.join(__dirname, '../src/components/pos/POSScreen.jsx'), 'utf8');
+      assert.ok(posCode.includes('kot-guard-header-icon'), 'Header contains icon badge container');
+      assert.ok(posCode.includes('<ChefHat'), 'Header contains ChefHat icon');
+      assert.ok(posCode.includes('title="Kitchen Ticket Required"'), 'Modal title is Kitchen Ticket Required');
+      assert.ok(
+        posCode.includes('subtitle="This parcel order has not been sent to the kitchen."'),
+        'Modal subtitle matches required copy'
+      );
+    });
+
+    it('27.2 POSScreen warning section contains light-red banner with exact warning copy and alert icon', () => {
+      const posCode = fs.readFileSync(path.join(__dirname, '../src/components/pos/POSScreen.jsx'), 'utf8');
+      assert.ok(posCode.includes('kot-guard-warning-banner'), 'Warning banner container present');
+      assert.ok(posCode.includes('Kitchen ticket has not been sent.'), 'Warning headline present');
+      assert.ok(posCode.includes('Please send the KOT before completing payment.'), 'Warning text present');
+      assert.ok(posCode.includes('<AlertCircle'), 'Warning alert icon present');
+    });
+
+    it('27.3 POSScreen renders dynamic parcel reference container and unsent kitchen items panel', () => {
+      const posCode = fs.readFileSync(path.join(__dirname, '../src/components/pos/POSScreen.jsx'), 'utf8');
+      assert.ok(posCode.includes('kot-guard-parcel-ref'), 'Parcel reference section present');
+      assert.ok(posCode.includes('{parcelOrderNumber}'), 'Dynamic parcel order reference rendered');
+      assert.ok(posCode.includes('kot-guard-items-card'), 'Unsent items card present');
+      assert.ok(posCode.includes('Unsent Kitchen Items'), 'Unsent kitchen items heading present');
+      assert.ok(posCode.includes('kot-guard-qty-badge'), 'Unsent quantity badge present');
+      assert.ok(posCode.includes('Qty:'), 'Quantity formatted with Qty: badge prefix');
+    });
+
+    it('27.4 POSScreen renders redesigned side-by-side footer buttons with primary Send to KOT and Cancel', () => {
+      const posCode = fs.readFileSync(path.join(__dirname, '../src/components/pos/POSScreen.jsx'), 'utf8');
+      assert.ok(posCode.includes('kot-guard-footer-actions'), 'Footer actions grid container present');
+      assert.ok(posCode.includes('kot-guard-btn--cancel'), 'Cancel button styled with cancel class');
+      assert.ok(posCode.includes('kot-guard-btn--primary'), 'Send to KOT styled with primary class');
+      assert.ok(posCode.includes('<Printer'), 'Printer icon present on Send to KOT action');
+    });
+
+    it('27.5 CSS includes backdrop-blur overlay, 8it dark green primary button, and responsive tablet styles', () => {
+      const posCss = fs.readFileSync(path.join(__dirname, '../src/pos.css'), 'utf8');
+      const dsCss = fs.readFileSync(path.join(__dirname, '../src/design-system.css'), 'utf8');
+      assert.ok(dsCss.includes('backdrop-filter: blur(6px)'), 'Blurred dark overlay in design-system.css');
+      assert.ok(posCss.includes('.kot-guard-modal.ui-modal'), 'Modal rounded corners styling defined');
+      assert.ok(posCss.includes('#0A3D29'), '8it dark green brand color applied to primary action');
+      assert.ok(posCss.includes('.kot-guard-header-icon'), 'Light-red rounded square header icon container defined');
+      assert.ok(posCss.includes('.kot-guard-qty-badge'), 'Quantity badge style defined');
+    });
+  });
+
+  describe('Suite 28: Parcel KOT Retry & Queue Acceptance Safeguards', () => {
+    it('28.1 POSScreen displays "KOT queued — waiting for kitchen printer" when backend queue accepts job with offline printer', () => {
+      const posCode = fs.readFileSync(path.join(__dirname, '../src/components/pos/POSScreen.jsx'), 'utf8');
+      assert.ok(posCode.includes('KOT queued — waiting for kitchen printer'), 'POSScreen handles offline printer queue notice');
+      assert.ok(posCode.includes('kotGuardQueuedNotice'), 'POSScreen tracks kotGuardQueuedNotice state');
+    });
+
+    it('28.2 CheckoutModal displays "KOT queued — waiting for kitchen printer" when retrying from payment modal', () => {
+      const modalCode = fs.readFileSync(path.join(__dirname, '../src/components/pos/CheckoutModal.jsx'), 'utf8');
+      assert.ok(modalCode.includes('KOT queued — waiting for kitchen printer'), 'CheckoutModal handles offline printer queue notice');
+      assert.ok(modalCode.includes('kotQueuedNotice'), 'CheckoutModal tracks kotQueuedNotice state');
+    });
+  });
+
+  describe('Suite 29: Generalized Wi-Fi Printer Architecture & Diagnostics', () => {
+    it('29.1 api.printers exposes testConnection endpoint', () => {
+      const apiCode = fs.readFileSync(path.join(__dirname, '../src/services/api.js'), 'utf8');
+      assert.ok(apiCode.includes('testConnection: (id) => request(`/printers/${id}/test-connection`'), 'api.printers has testConnection method');
+    });
+
+    it('29.2 PrinterAgentAdmin renders Test Connection buttons and dynamic port labels for both printers', () => {
+      const adminCode = fs.readFileSync(path.join(__dirname, '../src/components/admin/PrinterAgentAdmin.jsx'), 'utf8');
+      assert.ok(adminCode.includes('handleTestConnection'), 'PrinterAgentAdmin has handleTestConnection handler');
+      assert.ok(adminCode.includes('Test Connection'), 'Renders Test Connection button text');
+      assert.ok(adminCode.includes('Port {kitchenPrinter?.port || 9100}'), 'Dynamic port display for Kitchen printer');
+      assert.ok(adminCode.includes('Port {cashierPrinter?.port || 9100}'), 'Dynamic port display for Cashier printer');
+    });
+  });
+
+  describe('Suite 30: Customer Name on Complete Payment & Printed Invoice', () => {
+    it('30.1 CheckoutModal renders Customer Name label and input between Total Payable and Payment mode toggle', () => {
+      const modalCode = fs.readFileSync(path.join(__dirname, '../src/components/pos/CheckoutModal.jsx'), 'utf8');
+      assert.ok(modalCode.includes('Customer Name'), 'Renders Customer Name label');
+      assert.ok(modalCode.includes('placeholder="Enter customer name (optional)"'), 'Uses correct placeholder');
+      assert.ok(modalCode.includes("minHeight: '44px'"), 'Uses touch-friendly 44px min-height');
+
+      // Verify placement: pay-total -> customer-name-field -> pay-mode-toggle
+      const payTotalIdx = modalCode.indexOf('className="pay-total"');
+      const custFieldIdx = modalCode.indexOf('className="customer-name-field"');
+      const toggleIdx = modalCode.indexOf('className="pay-mode-toggle"');
+      assert.ok(payTotalIdx < custFieldIdx, 'Customer name field is placed below Total Payable');
+      assert.ok(custFieldIdx < toggleIdx, 'Customer name field is placed above Single / Split toggle');
+    });
+
+    it('30.2 CheckoutModal maintains customerName state independently across payment methods & split mode', () => {
+      const modalCode = fs.readFileSync(path.join(__dirname, '../src/components/pos/CheckoutModal.jsx'), 'utf8');
+      assert.ok(modalCode.includes("const [customerName, setCustomerName] = useState('');"), 'Maintains customerName state');
+      assert.ok(modalCode.includes('cleanCustomerName = customerName.trim() || null'), 'Trims customer name or normalizes to null');
+    });
+
+    it('30.3 ReceiptModal renders CUSTOMER line on-screen and in print media when customerName is present', () => {
+      const receiptCode = fs.readFileSync(path.join(__dirname, '../src/components/pos/ReceiptModal.jsx'), 'utf8');
+      assert.ok(receiptCode.includes('CUSTOMER: {customerName}'), 'Renders CUSTOMER label and dynamic name');
+      assert.ok(receiptCode.includes('invoice.customer_name ||'), 'Inspects invoice.customer_name');
+    });
+
+    it('30.4 InvoiceHistoryModal renders CUSTOMER detail when invoice contains customer_name', () => {
+      const historyCode = fs.readFileSync(path.join(__dirname, '../src/components/pos/InvoiceHistoryModal.jsx'), 'utf8');
+      assert.ok(historyCode.includes('CUSTOMER: {selectedInvoice.customer_name}'), 'Renders CUSTOMER in invoice details drawer');
     });
   });
 });

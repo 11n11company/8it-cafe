@@ -8,10 +8,12 @@ import com.eightitcafe.printagent.network.AgentSession
 import com.eightitcafe.printagent.network.ApiClient
 import com.eightitcafe.printagent.network.AuthOutcome
 import com.eightitcafe.printagent.network.TcpPrinterClient
+import com.eightitcafe.printagent.transport.PrinterTransport
+import com.eightitcafe.printagent.transport.TcpPrinterTransport
 
 /**
  * Android Application singleton providing shared instances of preferences,
- * API client, agent token session, local print job store, and direct TCP socket client.
+ * API client, agent token session, local print job store, and generalized printer transport.
  */
 class PrintAgentApp : Application() {
 
@@ -25,6 +27,9 @@ class PrintAgentApp : Application() {
         private set
 
     lateinit var tcpPrinterClient: TcpPrinterClient
+        private set
+
+    lateinit var printerTransport: PrinterTransport
         private set
 
     lateinit var printJobStore: PrintJobStore
@@ -43,5 +48,6 @@ class PrintAgentApp : Application() {
             outcome
         })
         tcpPrinterClient = TcpPrinterClient(connectTimeoutMs = 3000, writeTimeoutMs = 5000)
+        printerTransport = TcpPrinterTransport(defaultConnectTimeoutMs = 3000, defaultWriteTimeoutMs = 5000)
     }
 }

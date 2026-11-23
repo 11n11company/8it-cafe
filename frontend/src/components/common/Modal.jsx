@@ -3,7 +3,7 @@ import React, { useEffect } from 'react';
 /**
  * Standard 8it Cafe modal / confirmation dialog. Styling lives in design-system.css (.ui-modal).
  */
-export function Modal({ isOpen, onClose, title, subtitle, children, footer, maxWidth = '550px', headerBg, className = '' }) {
+export function Modal({ isOpen, onClose, title, subtitle, icon, children, footer, maxWidth = '550px', headerBg, className = '' }) {
   useEffect(() => {
     const handleKeyDown = (e) => {
       if (e.key === 'Escape' && isOpen && onClose) {
@@ -31,9 +31,12 @@ export function Modal({ isOpen, onClose, title, subtitle, children, footer, maxW
     >
       <div className={`ui-modal ${className}`.trim()} role="dialog" aria-modal="true" style={{ maxWidth }}>
         <div className="ui-modal__header" style={headerBg ? { backgroundColor: headerBg } : undefined}>
-          <div>
-            <h3 className="ui-modal__title">{title}</h3>
-            {subtitle && <p className="ui-modal__subtitle">{subtitle}</p>}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
+            {icon}
+            <div>
+              <h3 className="ui-modal__title">{title}</h3>
+              {subtitle && <p className="ui-modal__subtitle">{subtitle}</p>}
+            </div>
           </div>
           {onClose && (
             <button

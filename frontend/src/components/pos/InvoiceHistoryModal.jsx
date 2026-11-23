@@ -14,6 +14,7 @@ export function InvoiceHistoryModal({
   onResumeDraft = null
 }) {
   const { hasRole } = useAuth();
+  const isAdmin = hasRole('ADMIN');
   const canVoidOrRefund = hasRole('ADMIN', 'STORE_MANAGER');
 
   const [invoices, setInvoices] = useState([]);
@@ -27,9 +28,9 @@ export function InvoiceHistoryModal({
   const [loadingDetail, setLoadingDetail] = useState(false);
   const [actionFeedback, setActionFeedback] = useState(null);
 
-  // Voiding state
-  const [voidModalOpen, setVoidModalOpen] = useState(false);
-  const [voidReason, setVoidReason] = useState('');
+  // Deletion state (Admin only)
+  const [deleteModalOpen, setDeleteModalOpen] = useState(false);
+  const [deleteReason, setDeleteReason] = useState('');
   const [actionLoading, setActionLoading] = useState(false);
 
   // Refunding state
@@ -69,7 +70,7 @@ export function InvoiceHistoryModal({
         status: filterStatus || undefined,
         limit: 50
       });
-      setInvoices(res?.data || []);
+      setInvoices((res?.data || []).filter((inv) => !inv.is_deleted));
     } catch (err) {
       setError(err.message || 'Failed to load invoices');
     } finally {
@@ -138,20 +139,22 @@ export function InvoiceHistoryModal({
     }
   };
 
-  const handleVoidInvoice = async () => {
-    if (!voidReason.trim()) {
-      alert('Please provide a reason for voiding this invoice.');
+  const handleDeleteInvoice = async () => {
+    if (!deleteReason.trim()) {
+      alert('Please provide a reason for deleting this invoice.');
       return;
     }
     setActionLoading(true);
     try {
-      await api.billing.voidInvoice(selectedInvoice.id, voidReason);
-      setVoidModalOpen(false);
-      setVoidReason('');
-      await handleSelectInvoice(selectedInvoice);
+      await api.billing.deleteInvoice(selectedInvoice.id, deleteReason.trim());
+      setInvoices((prev) => prev.filter((inv) => inv.id !== selectedInvoice.id));
+      setSelectedInvoice(null);
+      setDeleteModalOpen(false);
+      setDeleteReason('');
+      setActionFeedback({ type: 'success', message: `Invoice ${selectedInvoice.invoice_number} successfully deleted.` });
       fetchInvoices();
     } catch (err) {
-      alert(err.message || 'Failed to void invoice');
+      alert(err.message || 'Failed to delete invoice');
     } finally {
       setActionLoading(false);
     }
@@ -337,6 +340,11 @@ export function InvoiceHistoryModal({
                   )} | Date:{' '}
                   {new Date(selectedInvoice.created_at).toLocaleString('en-IN')}
                 </div>
+                {selectedInvoice.customer_name && (
+                  <div style={{ fontSize: '0.85rem', fontWeight: 700, color: 'var(--color-primary, #174D38)', marginTop: '4px', fontFamily: 'var(--font-mono)' }}>
+                    CUSTOMER: {selectedInvoice.customer_name}
+                  </div>
+                )}
               </div>
               <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
                 <Badge status={selectedInvoice.payment_status} />
@@ -456,32 +464,33 @@ export function InvoiceHistoryModal({
                 </>
               )}
 
+              {isAdmin && !selectedInvoice.is_deleted && (
+                <Button
+                  variant="danger"
+                  size="md"
+                  onClick={() => {
+                    setDeleteReason('');
+                    setDeleteModalOpen(true);
+                  }}
+                  style={{ minHeight: '44px' }}
+                >
+                  Delete Invoice
+                </Button>
+              )}
+
               {canVoidOrRefund && selectedInvoice.payment_status === 'PAID' && (
-                <>
-                  <Button
-                    variant="danger"
-                    size="md"
-                    onClick={() => {
-                      setVoidReason('');
-                      setVoidModalOpen(true);
-                    }}
-                    style={{ minHeight: '44px' }}
-                  >
-                    Void Invoice
-                  </Button>
-                  <Button
-                    variant="outline"
-                    size="md"
-                    onClick={() => {
-                      setRefundReason('');
-                      setRefundAmount(selectedInvoice.grand_total);
-                      setRefundModalOpen(true);
-                    }}
-                    style={{ minHeight: '44px' }}
-                  >
-                    Issue Refund
-                  </Button>
-                </>
+                <Button
+                  variant="outline"
+                  size="md"
+                  onClick={() => {
+                    setRefundReason('');
+                    setRefundAmount(selectedInvoice.grand_total);
+                    setRefundModalOpen(true);
+                  }}
+                  style={{ minHeight: '44px' }}
+                >
+                  Issue Refund
+                </Button>
               )}
             </div>
           </div>
@@ -515,7 +524,7 @@ export function InvoiceHistoryModal({
                   </td>
                 </tr>
               ) : (
-                invoices.map((inv) => (
+                invoices.filter((inv) => !inv.is_deleted).map((inv) => (
                   <tr key={inv.id} style={{ cursor: 'pointer' }} onClick={() => handleSelectInvoice(inv)}>
                     <td className="mono font-bold" style={{ color: 'var(--primary)' }}>{inv.invoice_number}</td>
                     <td>{inv.cashier_name_snapshot || inv.created_by_name || 'Staff'}</td>
@@ -535,7 +544,7 @@ export function InvoiceHistoryModal({
                       })}
                     </td>
                     <td>
-                      <Badge status={inv.payment_status} />
+                      <Badge status={inv.is_deleted ? 'DELETED' : inv.payment_status} />
                     </td>
                     <td className="text-right mono font-bold">
                       ₹{Number(inv.grand_total || 0).toFixed(2)}
@@ -741,6 +750,44 @@ export function InvoiceHistoryModal({
                   placeholder="e.g. Customer paid via UPI QR, mistakenly billed as Cash"
                   value={changeReason}
                   onChange={(e) => setChangeReason(e.target.value)}
+                />
+              </div>
+            </div>
+          </Modal>
+        )}
+        {/* Delete Invoice Confirmation Modal */}
+        {deleteModalOpen && selectedInvoice && (
+          <Modal
+            isOpen={deleteModalOpen}
+            onClose={() => setDeleteModalOpen(false)}
+            title={`Delete Invoice: ${selectedInvoice.invoice_number}`}
+            footer={
+              <>
+                <Button variant="outline" onClick={() => setDeleteModalOpen(false)} disabled={actionLoading}>
+                  Cancel
+                </Button>
+                <Button
+                  variant="danger"
+                  onClick={handleDeleteInvoice}
+                  disabled={actionLoading || !deleteReason.trim()}
+                >
+                  {actionLoading ? 'Deleting...' : 'Delete Invoice'}
+                </Button>
+              </>
+            }
+          >
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+              <div>
+                <label className="text-xs font-bold" style={{ display: 'block', marginBottom: '6px' }}>
+                  Reason for Deletion *
+                </label>
+                <textarea
+                  className="input"
+                  style={{ width: '100%', height: '80px', padding: '8px' }}
+                  placeholder="e.g. Test entry by cashier / Duplicate order error"
+                  value={deleteReason}
+                  onChange={(e) => setDeleteReason(e.target.value)}
+                  disabled={actionLoading}
                 />
               </div>
             </div>

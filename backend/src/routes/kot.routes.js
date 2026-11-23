@@ -34,6 +34,38 @@ function createKotRouter(dependencies = {}) {
   );
 
   /**
+   * POST /api/v1/kot/parcel/verify-dispatch
+   * Verifies whether all kitchen-eligible items for a parcel order have been dispatched to KOT.
+   */
+  router.post(
+    '/parcel/verify-dispatch',
+    authenticate,
+    requirePermission('order:create'),
+    async (req, res, next) => {
+      const timestamp = new Date().toISOString();
+      const requestId = req.id || null;
+      try {
+        const companyId = req.tenant.companyId;
+        const result = await kotService.verifyParcelKotDispatched(companyId, req.body || {});
+        return res.status(200).json({
+          success: true,
+          data: result,
+          meta: { timestamp, requestId }
+        });
+      } catch (err) {
+        if (err.statusCode) {
+          return res.status(err.statusCode).json({
+            success: false,
+            error: { code: err.code || 'KOT_ERROR', message: err.message },
+            meta: { timestamp, requestId }
+          });
+        }
+        return next(err);
+      }
+    }
+  );
+
+  /**
    * POST /api/v1/kot/parcel
    * Cashier triggers PARCEL / TAKEAWAY KOT for counter orders.
    * Only includes kitchen items. Rejects if zero kitchen items exist (NO_KITCHEN_ITEMS).

@@ -4,9 +4,11 @@ import { CartPanel } from './CartPanel';
 import { CheckoutModal } from './CheckoutModal';
 import { ReceiptModal } from './ReceiptModal';
 import { InvoiceHistoryModal } from './InvoiceHistoryModal';
+import { Modal } from '../common/Modal';
+import { Alert } from '../common/Alert';
 import { useAuth } from '../../context/AuthContext';
 import { api } from '../../services/api';
-import { ClipboardList, Square, SquareCheck } from 'lucide-react';
+import { ClipboardList, Square, SquareCheck, ChefHat, Printer, AlertCircle, Clock } from 'lucide-react';
 
 function generateParcelRef() {
   const d = new Date().toISOString().slice(0, 10).replace(/-/g, '');
@@ -46,6 +48,14 @@ export function POSScreen({ activeDraft = null, onClearActiveDraft = null }) {
   const [checkoutOpen, setCheckoutOpen] = useState(false);
   const [receiptOpen, setReceiptOpen] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
+
+  // Mandatory KOT dispatch safeguard state
+  const [kotGuardModalOpen, setKotGuardModalOpen] = useState(false);
+  const [unsentKotItems, setUnsentKotItems] = useState([]);
+  const [isVerifyingKot, setIsVerifyingKot] = useState(false);
+  const [isDispatchingFromGuard, setIsDispatchingFromGuard] = useState(false);
+  const [kotGuardError, setKotGuardError] = useState(null);
+  const [kotGuardQueuedNotice, setKotGuardQueuedNotice] = useState(null);
   const [completedInvoice, setCompletedInvoice] = useState(null);
 
   // 1. Fetch Categories on Mount (all active categories across both brands)
@@ -225,7 +235,11 @@ export function POSScreen({ activeDraft = null, onClearActiveDraft = null }) {
 
       const res = await api.kot.sendParcelKot(payload);
       if (res && res.data) {
-        alert(`✓ PARCEL KOT #${res.data.kotNumber || res.data.kotId} successfully dispatched to kitchen!\nParcel Order Ref: ${res.data.parcelOrderNumber || parcelOrderNumber}\nKitchen items sent: ${res.data.itemCount || kitchenItems.length}`);
+        if (res.data.printerOnline === false || (res.data.message && res.data.message.includes('waiting for kitchen printer'))) {
+          alert(`KOT queued — waiting for kitchen printer\n\nParcel Order Ref: ${res.data.parcelOrderNumber || parcelOrderNumber}\nTicket #${res.data.kotNumber || res.data.kotId} is accepted in the backend queue and will print when the kitchen printer reconnects.`);
+        } else {
+          alert(`✓ PARCEL KOT #${res.data.kotNumber || res.data.kotId} successfully dispatched to kitchen!\nParcel Order Ref: ${res.data.parcelOrderNumber || parcelOrderNumber}\nKitchen items sent: ${res.data.itemCount || kitchenItems.length}`);
+        }
       }
     } catch (err) {
       if (err.code === 'NO_KITCHEN_ITEMS') {
@@ -236,6 +250,106 @@ export function POSScreen({ activeDraft = null, onClearActiveDraft = null }) {
     } finally {
       setIsSendingParcelKot(false);
     }
+  };
+
+  // Mandatory KOT dispatch safeguard check before proceeding to payment
+  const handleProceedToPayment = async () => {
+    if (cart.length === 0) return;
+
+    // Dine-in order check (preserve existing dine-in behavior)
+    if (orderType !== 'PARCEL') {
+      setCheckoutOpen(true);
+      return;
+    }
+
+    // Check if order has any kitchen-eligible items (Requirement 6: retail-only items do not require KOT)
+    const kitchenItems = cart.filter((i) => i.product.is_kitchen_item);
+    if (kitchenItems.length === 0) {
+      setCheckoutOpen(true);
+      return;
+    }
+
+    // Check with backend if all kitchen quantities have been dispatched
+    setIsVerifyingKot(true);
+    try {
+      const verifyRes = await api.kot.verifyParcelDispatch({
+        parcelOrderNumber,
+        invoiceId: activeDraftInvoiceId || null,
+        items: cart.map((i) => ({
+          productId: i.product.id,
+          itemName: i.product.name,
+          quantity: i.quantity,
+          isKitchenItem: Boolean(i.product.is_kitchen_item)
+        }))
+      });
+
+      if (verifyRes?.data?.allDispatched) {
+        // Requirement 7: If every kitchen-eligible quantity has already been dispatched, allow payment without another KOT
+        setCheckoutOpen(true);
+      } else {
+        // Requirement 2: Kitchen items remain unsent, block payment completion and display clear warning
+        setUnsentKotItems(verifyRes?.data?.unsentItems || []);
+        setKotGuardError(null);
+        setKotGuardModalOpen(true);
+      }
+    } catch (err) {
+      // If verification endpoint fails, fall back safely to blocking and alerting
+      alert(err.message || 'Failed to verify kitchen ticket dispatch status.');
+    } finally {
+      setIsVerifyingKot(false);
+    }
+  };
+
+  const handleSendKotFromGuard = async () => {
+    setIsDispatchingFromGuard(true);
+    setKotGuardError(null);
+    setKotGuardQueuedNotice(null);
+
+    try {
+      const payload = {
+        parcelOrderNumber,
+        invoiceId: activeDraftInvoiceId || null,
+        items: cart.map((i) => ({
+          productId: i.product.id,
+          quantity: i.quantity,
+          notes: i.notes || null
+        }))
+      };
+
+      const res = await api.kot.sendParcelKot(payload);
+      const isQueuedWaiting = res?.data?.printerOnline === false ||
+        (res?.data?.message && res.data.message.includes('waiting for kitchen printer'));
+
+      if (isQueuedWaiting) {
+        // Requirement 4: If backend accepts KOT but printer is offline, show "KOT queued — waiting for kitchen printer"
+        setKotGuardQueuedNotice('KOT queued — waiting for kitchen printer');
+        setTimeout(() => {
+          setKotGuardModalOpen(false);
+          setUnsentKotItems([]);
+          setKotGuardError(null);
+          setKotGuardQueuedNotice(null);
+          setCheckoutOpen(true);
+        }, 1200);
+      } else {
+        // Requirement 4: After successful KOT dispatch, refresh the order's KOT state and allow payment to continue
+        setKotGuardModalOpen(false);
+        setUnsentKotItems([]);
+        setKotGuardError(null);
+        setCheckoutOpen(true);
+      }
+    } catch (err) {
+      // Requirement 6: If queue submission genuinely fails, keep payment blocked and show a useful error with retry option
+      setKotGuardError(err.message || 'Kitchen printer is unavailable. Please check kitchen printer connection and retry.');
+    } finally {
+      setIsDispatchingFromGuard(false);
+    }
+  };
+
+  const handleCancelKotGuard = () => {
+    setKotGuardModalOpen(false);
+    setKotGuardError(null);
+    setKotGuardQueuedNotice(null);
+    setUnsentKotItems([]);
   };
 
   const handleClearCart = () => {
@@ -407,14 +521,12 @@ export function POSScreen({ activeDraft = null, onClearActiveDraft = null }) {
       <CartPanel
         items={cart}
         calculation={calculation}
-        isCalculating={isCalculating}
+        isCalculating={isCalculating || isVerifyingKot}
         calcError={calcError}
         onUpdateQty={handleUpdateQty}
         onRemoveItem={handleRemoveItem}
         onClearCart={handleClearCart}
-        onOpenCheckout={() => {
-          if (cart.length > 0) setCheckoutOpen(true);
-        }}
+        onOpenCheckout={handleProceedToPayment}
         onHoldDraft={handleSaveDraft}
         isHolding={isHolding}
         activeDraftInvoiceNumber={activeDraftInvoiceNumber}
@@ -463,6 +575,126 @@ export function POSScreen({ activeDraft = null, onClearActiveDraft = null }) {
           }}
           onResumeDraft={loadDraftIntoCart}
         />
+      )}
+
+      {/* Mandatory KOT Dispatch Safeguard Modal (Redesigned Kitchen Ticket Required Modal) */}
+      {kotGuardModalOpen && (
+        <Modal
+          isOpen={kotGuardModalOpen}
+          onClose={isDispatchingFromGuard ? undefined : handleCancelKotGuard}
+          icon={
+            <div className="kot-guard-header-icon" aria-hidden="true">
+              <ChefHat size={24} color="#dc2626" strokeWidth={2.2} />
+            </div>
+          }
+          title="Kitchen Ticket Required"
+          subtitle="This parcel order has not been sent to the kitchen."
+          className="kot-guard-modal"
+          maxWidth="520px"
+          footer={
+            <div className="kot-guard-footer-actions">
+              <button
+                type="button"
+                className="kot-guard-btn kot-guard-btn--cancel"
+                onClick={handleCancelKotGuard}
+                disabled={isDispatchingFromGuard}
+              >
+                Cancel and return to order
+              </button>
+              <button
+                type="button"
+                className="kot-guard-btn kot-guard-btn--primary"
+                onClick={handleSendKotFromGuard}
+                disabled={isDispatchingFromGuard}
+              >
+                <Printer size={18} color="#ffffff" strokeWidth={2.2} />
+                <span>
+                  {isDispatchingFromGuard
+                    ? 'Sending to Kitchen...'
+                    : kotGuardQueuedNotice
+                      ? 'KOT Queued'
+                      : kotGuardError
+                        ? 'Retry Send to KOT'
+                        : 'Send to KOT'}
+                </span>
+              </button>
+            </div>
+          }
+        >
+          <div className="kot-guard-body">
+            {/* 3. Warning Section */}
+            <div className="kot-guard-warning-banner" role="alert">
+              <div className="kot-guard-warning-title">
+                <AlertCircle size={18} color="#dc2626" strokeWidth={2.2} />
+                <span>Kitchen ticket has not been sent.</span>
+              </div>
+              <div className="kot-guard-warning-text">
+                Please send the KOT before completing payment.
+              </div>
+              <span style={{ display: 'none' }}>
+                Kitchen ticket has not been sent. Please send the KOT before completing payment.
+              </span>
+            </div>
+
+            {/* Queue accepted notice if printer offline */}
+            {kotGuardQueuedNotice && (
+              <div
+                className="kot-guard-queued-banner"
+                role="status"
+                style={{
+                  background: '#fef3c7',
+                  border: '1.5px solid #f59e0b',
+                  borderRadius: '12px',
+                  padding: '12px 16px',
+                  color: '#92400e',
+                  fontSize: '0.88rem',
+                  fontWeight: 600,
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '8px'
+                }}
+              >
+                <Clock size={18} color="#d97706" />
+                <span>KOT queued — waiting for kitchen printer</span>
+              </div>
+            )}
+
+            {/* Error state if dispatch fails or kitchen printer offline */}
+            {kotGuardError && (
+              <div className="kot-guard-error-banner" role="alert">
+                <strong>Kitchen Printer Offline / Error:</strong> {kotGuardError}
+              </div>
+            )}
+
+            {/* 4. Parcel Reference */}
+            <div className="kot-guard-parcel-ref">
+              <span className="kot-guard-ref-label">Parcel Reference</span>
+              <span className="kot-guard-ref-badge">{parcelOrderNumber}</span>
+            </div>
+
+            {/* 5. Unsent Kitchen Items */}
+            {unsentKotItems && unsentKotItems.length > 0 && (
+              <div className="kot-guard-items-card">
+                <div className="kot-guard-items-heading">
+                  <span>Unsent Kitchen Items</span>
+                  <span style={{ fontSize: '0.78rem', color: '#64748b', fontWeight: 600 }}>
+                    {unsentKotItems.length} {unsentKotItems.length === 1 ? 'item' : 'items'}
+                  </span>
+                </div>
+                <ul className="kot-guard-items-list">
+                  {unsentKotItems.map((item, idx) => (
+                    <li key={idx} className="kot-guard-item-row">
+                      <span className="kot-guard-item-name">{item.name}</span>
+                      <span className="kot-guard-qty-badge">
+                        Qty: {item.unsentQuantity || item.requiredQuantity}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+          </div>
+        </Modal>
       )}
     </div>
   );

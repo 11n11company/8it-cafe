@@ -12,6 +12,7 @@ const TONE_BY_STATUS = {
   PENDING: 'warning',
   WARNING: 'warning',
   VOIDED: 'danger',
+  DELETED: 'danger',
   INACTIVE: 'danger',
   DANGER: 'danger',
   FAILED: 'danger',

@@ -61,58 +61,6 @@ export function ReportsScreen({ brandId: initialBrandId = '', onBrandChange = nu
     };
   }, [loadReports]);
 
-  // Render SVG polyline for hourly trend
-  const renderHourlyChart = () => {
-    const hourly = data?.hourlySales || [];
-    if (hourly.length === 0) {
-      return <div className="text-muted text-center" style={{ padding: '24px' }}>No hourly data available</div>;
-    }
-
-    const maxSales = Math.max(...hourly.map(h => Number(h.sales || 0)), 100);
-    const width = 600;
-    const height = 140;
-    const padding = 20;
-
-    const points = hourly.map((h, i) => {
-      const x = padding + (i / Math.max(1, (hourly.length - 1))) * (width - 2 * padding);
-      const val = Number(h.sales || 0);
-      const y = height - padding - (val / maxSales) * (height - 2 * padding);
-      return `${x},${y}`;
-    }).join(' ');
-
-    return (
-      <svg viewBox={`0 0 ${width} ${height}`} style={{ width: '100%', height: '140px', overflow: 'visible' }}>
-        <defs>
-          <linearGradient id="chartGrad" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%" stopColor="#174D38" stopOpacity="0.35" />
-            <stop offset="100%" stopColor="#174D38" stopOpacity="0.0" />
-          </linearGradient>
-        </defs>
-        <polyline
-          fill="none"
-          stroke="var(--color-heading)"
-          strokeWidth="3"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-          points={points}
-        />
-        {hourly.map((h, i) => {
-          const x = padding + (i / Math.max(1, (hourly.length - 1))) * (width - 2 * padding);
-          const val = Number(h.sales || 0);
-          const y = height - padding - (val / maxSales) * (height - 2 * padding);
-          if (val > 0) {
-            return (
-              <circle key={i} cx={x} cy={y} r="4" fill="#28664A" stroke="#FFFDF9" strokeWidth="2">
-                <title>{`${h.label}: ₹${val.toFixed(2)} (${h.invoiceCount} bills)`}</title>
-              </circle>
-            );
-          }
-          return null;
-        })}
-      </svg>
-    );
-  };
-
   const summary = data?.summary || {};
   const payments = data?.payments || {};
   const refunds = data?.refunds || {};
@@ -345,17 +293,8 @@ export function ReportsScreen({ brandId: initialBrandId = '', onBrandChange = nu
         </div>
       </div>
 
-      {/* Visual Analytics Grid: Hourly Velocity + Multi-Brand Revenue Share */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(350px, 1fr))', gap: '20px' }}>
-        {/* Hourly Velocity */}
-        <div className="admin-table-card" style={{ padding: '20px' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px' }}>
-            <h4 style={{ color: 'var(--text-primary)', fontSize: '1rem', margin: 0 }}>Hourly Sales Velocity (IST)</h4>
-            <span className="text-xs text-muted">24-Hour Curve</span>
-          </div>
-          {renderHourlyChart()}
-        </div>
-
+      {/* Visual Analytics Grid: Multi-Brand Revenue Share / Operational Health */}
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: '20px' }}>
         {/* Brand Performance Share (Visible on Consolidated View) */}
         {!brandId && (
           <div className="admin-table-card" style={{ padding: '20px' }}>

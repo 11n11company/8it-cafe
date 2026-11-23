@@ -159,6 +159,13 @@ describe('Complete Payment Synchronization Acceptance Scenarios', () => {
     );
     prodBrownieId = p2.rows[0].id;
 
+    // Kitchen Printer for KOT dispatch
+    await pool.query(
+      `INSERT INTO printers (company_id, printer_code, printer_name, printer_role, is_active)
+       VALUES ($1, $2, 'Kitchen Master Thermal Printer', 'KITCHEN_KOT', TRUE)`,
+      [companyId, `PRN-SYNC-${uid}`]
+    );
+
     // 6. Users
     const pwHash = '$2b$10$sjHIvg7QZH2pZU9KDVv86.F4RgHBW8mzIfMMOGpeBknKKWTmq/q7G'; // Password2026!
     const adminRoleId = 'e2b8c001-0000-4000-a000-000000000001';
@@ -227,6 +234,16 @@ describe('Complete Payment Synchronization Acceptance Scenarios', () => {
   // -------------------------------------------------------------------------
   it('1. Complete a parcel payment. Admin dashboard sales increase.', async () => {
     parcelRef = `PCL-SYNC-${Date.now().toString(36).toUpperCase()}`;
+
+    // Cashier dispatches KOT to kitchen first (mandatory safeguard)
+    await apiRequest('/api/v1/kot/parcel', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${cashierToken}` },
+      body: {
+        parcelOrderNumber: parcelRef,
+        items: [{ productId: prodCappuccinoId, quantity: 1 }]
+      }
+    });
 
     // Cashier completes checkout for 1 Cappuccino (₹120 + ₹6 GST = ₹126.00)
     const checkoutRes = await apiRequest('/api/v1/billing/invoices', {
@@ -392,9 +409,21 @@ describe('Complete Payment Synchronization Acceptance Scenarios', () => {
   // -------------------------------------------------------------------------
   it('6. A duplicate checkout request does not double-count sales.', async () => {
     const idempKey = `idemp-dup-${Date.now()}`;
+    const parcelOrderNo6 = `PCL-IDEMP-${Date.now()}`;
+
+    // Dispatch KOT first
+    await apiRequest('/api/v1/kot/parcel', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${cashierToken}` },
+      body: {
+        parcelOrderNumber: parcelOrderNo6,
+        items: [{ productId: prodCappuccinoId, quantity: 1 }]
+      }
+    });
+
     const payload = {
       orderType: 'PARCEL',
-      parcelOrderNumber: `PCL-IDEMP-${Date.now()}`,
+      parcelOrderNumber: parcelOrderNo6,
       items: [{ productId: prodCappuccinoId, quantity: 1 }],
       tenders: [{ payment_method: 'CARD', amount: '126.00', tendered_amount: '126.00', transaction_reference: 'CRD-IDEMP-01' }]
     };
@@ -481,12 +510,22 @@ describe('Complete Payment Synchronization Acceptance Scenarios', () => {
     assert.notStrictEqual(t2Before.status, 'AVAILABLE');
 
     // Complete a normal parcel counter checkout
+    const parcelOrderNo8 = `PCL-ISO-${Date.now()}`;
+    await apiRequest('/api/v1/kot/parcel', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${cashierToken}` },
+      body: {
+        parcelOrderNumber: parcelOrderNo8,
+        items: [{ productId: prodCappuccinoId, quantity: 1 }]
+      }
+    });
+
     const parcelRes = await apiRequest('/api/v1/billing/invoices', {
       method: 'POST',
       headers: { Authorization: `Bearer ${cashierToken}` },
       body: {
         orderType: 'PARCEL',
-        parcelOrderNumber: `PCL-ISO-${Date.now()}`,
+        parcelOrderNumber: parcelOrderNo8,
         items: [{ productId: prodCappuccinoId, quantity: 1 }],
         tenders: [{ payment_method: 'CASH', amount: '126.00', tendered_amount: '200.00' }]
       }

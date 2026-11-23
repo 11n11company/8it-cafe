@@ -736,11 +736,23 @@ async function sendKotForTableSession(companyId, sessionId, waiterId, idempotenc
 
     // 8. Generate concurrency-safe distinct Dine-In KOT number (Finding 10)
     const kotId = crypto.randomUUID();
-    const seqRes = await dbClient.query(
-      `SELECT fn_get_next_kot_sequence($1, 'DINE_IN') AS seq`,
-      [companyId]
-    );
-    const kotNumber = `KOT-T${session.table_number}-B${batchNumber}-${String(seqRes.rows[0].seq).padStart(4, '0')}`;
+    let kotNumber;
+    let attempts = 0;
+    while (attempts < 10) {
+      attempts++;
+      const seqRes = await dbClient.query(
+        `SELECT fn_get_next_kot_sequence($1, 'DINE_IN') AS seq`,
+        [companyId]
+      );
+      kotNumber = `KOT-T${session.table_number}-B${batchNumber}-${String(seqRes.rows[0].seq).padStart(4, '0')}`;
+      const existingCheck = await dbClient.query(
+        `SELECT 1 FROM kots WHERE company_id = $1 AND kot_number = $2`,
+        [companyId, kotNumber]
+      );
+      if (existingCheck.rows.length === 0) {
+        break;
+      }
+    }
     const waiterName = session.waiter_name || session.waiter_username || 'Staff';
 
     // 9. Insert KOT record with is_additional flag
@@ -958,7 +970,7 @@ async function reopenTableOrder(companyId, sessionId, userId, dbPool = pool) {
  * Atomically creates and settles the invoice, records payments, deducts inventory stock,
  * marks table session as COMPLETED, and safely sets table status back to AVAILABLE!
  */
-async function checkoutTableSession(companyId, sessionId, cashierId, { tenders, idempotencyKey, counterCode = 'COUNTER-01' }) {
+async function checkoutTableSession(companyId, sessionId, cashierId, { tenders, idempotencyKey, counterCode = 'COUNTER-01', customerName, customer_name }) {
   const client = await pool.connect();
 
   try {
@@ -1017,6 +1029,7 @@ async function checkoutTableSession(companyId, sessionId, cashierId, { tenders, 
       items: itemsPayload,
       tenders,
       counterCode,
+      customerName: customerName || customer_name || null,
       notes: `Dine-In Settlement: ${session.table_name}`
     };
 
