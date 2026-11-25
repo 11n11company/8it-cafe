@@ -4,6 +4,10 @@
     {
       "source": "/api/:path*",
       "destination": "https://8it-cafe-production.up.railway.app/api/:path*"
+    },
+    {
+      "source": "/(.*)",
+      "destination": "/index.html"
     }
   ]
 }
