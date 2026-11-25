@@ -1,12 +1,14 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useAuth } from '../../context/AuthContext';
 import { Badge } from '../common/Badge';
-import { BarChart3, ExternalLink, LogOut, ReceiptText, Settings, ShoppingCart, Users, UtensilsCrossed } from 'lucide-react';
+import { useFullscreen } from '../../hooks/useFullscreen';
+import { BarChart3, ExternalLink, LogOut, Maximize, Minimize, ReceiptText, Settings, ShoppingCart, Users, UtensilsCrossed } from 'lucide-react';
 
 export function Header({ currentView, setView, onOpenSwitchCashier, onOpenInvoices }) {
   const { user, company, role, hasPermission, hasRole, logout } = useAuth();
   const [currentTime, setCurrentTime] = useState('');
   const [isMenuOpen, setIsMenuOpen] = useState(false);
+  const { isFullscreen, toggleFullscreen } = useFullscreen();
   const menuRef = useRef(null);
 
   useEffect(() => {
@@ -131,6 +133,18 @@ export function Header({ currentView, setView, onOpenSwitchCashier, onOpenInvoic
 
       {/* Cashier Status, Clock & Actions */}
       <div className="header-right">
+        {/* Fullscreen Mode (Tablet POS Kiosk) */}
+        <button
+          type="button"
+          className="header-fullscreen-btn"
+          onClick={toggleFullscreen}
+          title={isFullscreen ? "Exit Fullscreen" : "Enter Fullscreen (Tablet POS)"}
+          aria-label="Toggle Fullscreen Mode"
+        >
+          {isFullscreen ? <Minimize className="ui-icon" aria-hidden="true" /> : <Maximize className="ui-icon" aria-hidden="true" />}
+          <span className="fullscreen-btn-label">{isFullscreen ? 'Exit Full' : 'Full Screen'}</span>
+        </button>
+
         <div className="header-clock" title="Indian Standard Time (IST)">
           {currentTime || '--:--:--'}
         </div>

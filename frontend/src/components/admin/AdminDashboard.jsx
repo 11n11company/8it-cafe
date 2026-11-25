@@ -13,6 +13,7 @@ import { ReceiptModal } from '../pos/ReceiptModal';
 import { Modal } from '../common/Modal';
 import { Button } from '../common/Button';
 import { Alert } from '../common/Alert';
+import { useFullscreen } from '../../hooks/useFullscreen';
 import {
   ArrowLeftRight,
   Plus,
@@ -32,7 +33,12 @@ import {
   Landmark,
   LayoutGrid,
   LogOut,
+  Maximize,
+  Menu,
+  Minimize,
   Package,
+  PanelLeftClose,
+  PanelLeftOpen,
   Printer,
   ReceiptText,
   RefreshCw,
@@ -83,6 +89,8 @@ export function AdminDashboard({ onOpenSwitchCashier }) {
   // MANAGEMENT: 'company_settings', 'users', 'roles'
   // FINANCE: 'payments', 'refunds'
   const [activeTab, setActiveTab] = useState('orders');
+  const [sidebarOpen, setSidebarOpen] = useState(true);
+  const { isFullscreen, toggleFullscreen } = useFullscreen();
 
   // Operating Brands for Brand Outlet selector
   const [brands, setBrands] = useState([]);
@@ -512,15 +520,35 @@ export function AdminDashboard({ onOpenSwitchCashier }) {
   });
 
   return (
-    <div className="admin-saas-layout">
+    <div className={`admin-saas-layout ${!sidebarOpen ? 'sidebar-collapsed' : ''}`}>
+      {/* Mobile/Tablet Backdrop Overlay */}
+      {sidebarOpen && (
+        <div
+          className="saas-sidebar-backdrop"
+          onClick={() => setSidebarOpen(false)}
+          aria-hidden="true"
+        />
+      )}
+
       {/* 2. MAIN NAVIGATION SIDEBAR (Collapsible & Grouped) */}
-      <aside className="saas-sidebar">
+      <aside className={`saas-sidebar ${!sidebarOpen ? 'collapsed' : ''}`}>
         <div className="saas-sidebar-brand">
-          <div className="saas-sidebar-logo">8it</div>
-          <div>
-            <div className="saas-sidebar-brand-name">8it Cafe</div>
-            <div className="saas-sidebar-brand-sub">{isAdmin ? 'Administration' : 'Store management'}</div>
+          <div className="saas-sidebar-brand-left">
+            <div className="saas-sidebar-logo">8it</div>
+            <div>
+              <div className="saas-sidebar-brand-name">8it Cafe</div>
+              <div className="saas-sidebar-brand-sub">{isAdmin ? 'Administration' : 'Store management'}</div>
+            </div>
           </div>
+          <button
+            type="button"
+            className="saas-sidebar-toggle-btn"
+            onClick={() => setSidebarOpen(false)}
+            title="Collapse Sidebar"
+            aria-label="Collapse Sidebar"
+          >
+            <PanelLeftClose className="ui-icon" aria-hidden="true" />
+          </button>
         </div>
         {/* Brand Outlet Header Selector */}
         <div className="saas-brand-selector">
@@ -707,13 +735,32 @@ export function AdminDashboard({ onOpenSwitchCashier }) {
         {/* Top Header Bar */}
         {activeTab === 'dashboard' ? (
           <section className="saas-hero" aria-label="Welcome">
-            <div className="saas-hero__spacer" />
+            <div className="saas-hero__left">
+              <button
+                type="button"
+                className="hero-glass-btn saas-toggle-menu-btn"
+                onClick={() => setSidebarOpen((prev) => !prev)}
+                title={sidebarOpen ? "Collapse Sidebar" : "Open Sidebar"}
+                aria-label="Toggle Sidebar Navigation"
+              >
+                {sidebarOpen ? <PanelLeftClose className="ui-icon" aria-hidden="true" /> : <Menu className="ui-icon" aria-hidden="true" />}
+              </button>
+            </div>
             <div className="saas-hero__center">
               <div className="saas-hero__greeting">{greeting}</div>
               <div className="saas-hero__name">{user?.full_name || user?.fullName || user?.username}</div>
               <div className="saas-hero__date">{todayLabel}</div>
             </div>
             <div className="saas-hero__actions">
+              <button
+                type="button"
+                className="hero-glass-btn"
+                onClick={toggleFullscreen}
+                title={isFullscreen ? "Exit Fullscreen" : "Enter Fullscreen (Tablet)"}
+                aria-label="Toggle Fullscreen"
+              >
+                {isFullscreen ? <Minimize className="ui-icon" aria-hidden="true" /> : <Maximize className="ui-icon" aria-hidden="true" />}
+              </button>
               <span className="saas-hero__clock">{currentTime}</span>
               {onOpenSwitchCashier && (
                 <button type="button" className="hero-glass-btn" onClick={onOpenSwitchCashier} title="Switch User (4-Digit PIN)" aria-label="Switch User">
@@ -731,11 +778,33 @@ export function AdminDashboard({ onOpenSwitchCashier }) {
         ) : (
         <header className="saas-top-header">
           <div className="saas-top-left">
-            <h1 className="saas-header-title">{(PAGE_META[activeTab] || PAGE_META.dashboard).title}</h1>
-            <p className="saas-header-desc">{(PAGE_META[activeTab] || PAGE_META.dashboard).desc}</p>
+            <button
+              type="button"
+              className="saas-header-menu-btn"
+              onClick={() => setSidebarOpen((prev) => !prev)}
+              title={sidebarOpen ? "Collapse Sidebar" : "Open Sidebar"}
+              aria-label="Toggle Sidebar Navigation"
+            >
+              {sidebarOpen ? <PanelLeftClose className="ui-icon" aria-hidden="true" /> : <Menu className="ui-icon" aria-hidden="true" />}
+            </button>
+            <div>
+              <h1 className="saas-header-title">{(PAGE_META[activeTab] || PAGE_META.dashboard).title}</h1>
+              <p className="saas-header-desc">{(PAGE_META[activeTab] || PAGE_META.dashboard).desc}</p>
+            </div>
           </div>
 
           <div className="saas-top-right">
+            <button
+              type="button"
+              className="saas-pill-btn saas-fullscreen-btn"
+              onClick={toggleFullscreen}
+              title={isFullscreen ? "Exit Fullscreen" : "Fullscreen Mode (Tablet)"}
+              aria-label="Toggle Fullscreen Mode"
+            >
+              {isFullscreen ? <Minimize className="ui-icon" aria-hidden="true" /> : <Maximize className="ui-icon" aria-hidden="true" />}
+              <span className="saas-fullscreen-text">{isFullscreen ? 'Exit Full' : 'Full Screen'}</span>
+            </button>
+
             <div className="saas-clock">{currentTime}</div>
 
             {onOpenSwitchCashier && (

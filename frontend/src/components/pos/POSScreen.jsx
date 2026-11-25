@@ -8,7 +8,7 @@ import { Modal } from '../common/Modal';
 import { Alert } from '../common/Alert';
 import { useAuth } from '../../context/AuthContext';
 import { api } from '../../services/api';
-import { ClipboardList, Square, SquareCheck, ChefHat, Printer, AlertCircle, Clock } from 'lucide-react';
+import { ClipboardList, Square, SquareCheck, ChefHat, Printer, AlertCircle, Clock, PanelLeftClose, PanelLeftOpen } from 'lucide-react';
 
 function generateParcelRef() {
   const d = new Date().toISOString().slice(0, 10).replace(/-/g, '');
@@ -27,6 +27,7 @@ export function POSScreen({ activeDraft = null, onClearActiveDraft = null }) {
 
   // Catalogs state - unified across 8itcafe and Seri's Hub
   const [categories, setCategories] = useState([]);
+  const [categoriesOpen, setCategoriesOpen] = useState(true);
   const [selectedCategoryId, setSelectedCategoryId] = useState('');
   const [products, setProducts] = useState([]);
   const [searchQuery, setSearchQuery] = useState('');
@@ -401,9 +402,9 @@ export function POSScreen({ activeDraft = null, onClearActiveDraft = null }) {
     : products;
 
   return (
-    <div className="pos-screen">
+    <div className={`pos-screen ${!categoriesOpen ? 'sidebar-collapsed' : ''}`}>
       {/* 1. LEFT SIDEBAR: CATEGORIES (UNIFIED CATALOGUE) */}
-      <aside className="pos-sidebar">
+      <aside className={`pos-sidebar ${!categoriesOpen ? 'collapsed' : ''}`}>
         {/* Categories List */}
         <div className="sidebar-category-section" style={{ flex: 1, overflowY: 'auto' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
@@ -450,6 +451,17 @@ export function POSScreen({ activeDraft = null, onClearActiveDraft = null }) {
       <main className="pos-catalog">
         {/* Search & Quick Filters */}
         <div className="catalog-search-bar" style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
+          <button
+            type="button"
+            className={`btn-toggle-categories ${categoriesOpen ? 'active' : ''}`}
+            onClick={() => setCategoriesOpen(prev => !prev)}
+            title={categoriesOpen ? "Collapse Categories Sidebar" : "Expand Categories Sidebar"}
+            aria-label="Toggle Categories Sidebar"
+          >
+            {categoriesOpen ? <PanelLeftClose className="ui-icon" aria-hidden="true" /> : <PanelLeftOpen className="ui-icon" aria-hidden="true" />}
+            <span className="btn-categories-text">Categories</span>
+          </button>
+
           <div className="search-input-wrapper" style={{ flex: 1 }}>
             <span className="search-icon">
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">

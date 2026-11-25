@@ -587,6 +587,46 @@ h1, h2, h3, h4 {
   display: flex;
   flex-direction: column;
   overflow: hidden;
+  transition: width 0.2s ease, opacity 0.2s ease;
+}
+
+.pos-sidebar.collapsed {
+  display: none !important;
+  width: 0 !important;
+  overflow: hidden !important;
+}
+
+.pos-screen.sidebar-collapsed {
+  grid-template-columns: minmax(0, 1fr) 380px !important;
+}
+
+.btn-toggle-categories {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 44px;
+  padding: 0 14px;
+  border-radius: var(--radius-md, 8px);
+  border: 1px solid var(--border-default);
+  background: var(--bg-surface);
+  color: var(--text-primary);
+  cursor: pointer;
+  font-weight: 600;
+  font-size: 0.85rem;
+  transition: all 0.15s ease;
+  flex-shrink: 0;
+}
+
+.btn-toggle-categories:hover {
+  background: var(--color-surface-hover, #f4f7f5);
+  border-color: var(--primary);
+  color: var(--primary);
+}
+
+.btn-toggle-categories.active {
+  background: var(--primary-subtle, rgba(6, 63, 46, 0.08));
+  color: var(--primary);
+  border-color: var(--primary);
 }
 
 .sidebar-brand-section {
@@ -1950,7 +1990,7 @@ h1, h2, h3, h4 {
 
 /* 2. Main Sidebar */
 .saas-sidebar {
-  width: 220px;
+  width: 248px;
   background-color: var(--color-surface);
   border-right: 1px solid var(--color-border);
   display: flex;
@@ -1958,6 +1998,117 @@ h1, h2, h3, h4 {
   padding: 16px;
   overflow-y: auto;
   flex-shrink: 0;
+  transition: width 0.25s cubic-bezier(0.16, 1, 0.3, 1), transform 0.25s cubic-bezier(0.16, 1, 0.3, 1), padding 0.25s ease;
+  position: relative;
+  z-index: 10;
+}
+
+.saas-sidebar.collapsed {
+  width: 0 !important;
+  padding-left: 0 !important;
+  padding-right: 0 !important;
+  border-right: none !important;
+  overflow: hidden !important;
+  visibility: hidden;
+  pointer-events: none;
+}
+
+.saas-sidebar-brand {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+
+.saas-sidebar-brand-left {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.saas-sidebar-toggle-btn {
+  width: 32px;
+  height: 32px;
+  border-radius: 6px;
+  border: 1px solid var(--color-border);
+  background: var(--color-surface-muted);
+  color: var(--color-text-muted);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  transition: all 0.15s ease;
+}
+
+.saas-sidebar-toggle-btn:hover {
+  background: var(--color-surface);
+  color: var(--color-heading);
+  border-color: var(--color-primary);
+}
+
+.saas-header-menu-btn,
+.saas-toggle-menu-btn {
+  width: 38px;
+  height: 38px;
+  border-radius: 8px;
+  border: 1px solid var(--color-border);
+  background: var(--color-surface);
+  color: var(--color-heading);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  margin-right: 12px;
+  flex-shrink: 0;
+  transition: all 0.15s ease;
+}
+
+.saas-header-menu-btn:hover,
+.saas-toggle-menu-btn:hover {
+  background: var(--color-primary-soft, rgba(6, 63, 46, 0.08));
+  color: var(--color-primary);
+  border-color: var(--color-primary);
+}
+
+.saas-hero__left {
+  display: flex;
+  align-items: center;
+}
+
+.saas-top-left {
+  display: flex;
+  align-items: center;
+}
+
+/* Tablet & Mobile Slide-over Drawer Backdrop */
+.saas-sidebar-backdrop {
+  display: none;
+}
+
+@media (max-width: 1024px) {
+  .saas-sidebar-backdrop {
+    display: block;
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(0, 0, 0, 0.45);
+    backdrop-filter: blur(2px);
+    z-index: 99;
+  }
+
+  .saas-sidebar {
+    position: fixed;
+    top: 0;
+    left: 0;
+    bottom: 0;
+    z-index: 100;
+    box-shadow: 4px 0 24px rgba(0, 0, 0, 0.2);
+  }
 }
 
 .saas-brand-selector {
@@ -4556,6 +4707,10 @@ html, body, #root {
     width: 360px !important;
   }
 
+  .pos-screen.sidebar-collapsed {
+    grid-template-columns: minmax(0, 1fr) 360px !important;
+  }
+
   .product-grid {
     grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)) !important;
     gap: 12px !important;
@@ -4599,4 +4754,55 @@ html, body, #root {
     -webkit-overflow-scrolling: touch;
     width: 100%;
   }
+}
+
+/* ==========================================================================
+   Full Screen Buttons across Admin, Cashier POS, and Waiter Floor
+   ========================================================================== */
+.header-fullscreen-btn,
+.waiter-fullscreen-btn,
+.saas-fullscreen-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 38px;
+  padding: 0 12px;
+  border-radius: var(--radius-md, 8px);
+  border: 1px solid var(--border-default, #e2e8f0);
+  background: var(--bg-surface, #ffffff);
+  color: var(--text-primary, #1e293b);
+  cursor: pointer;
+  font-weight: 600;
+  font-size: 0.82rem;
+  transition: all 0.15s ease;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.header-fullscreen-btn:hover,
+.waiter-fullscreen-btn:hover,
+.saas-fullscreen-btn:hover {
+  background: var(--color-primary-soft, rgba(6, 63, 46, 0.08));
+  color: var(--color-primary, #063F2E);
+  border-color: var(--color-primary, #063F2E);
+}
+
+.header-fullscreen-btn .ui-icon,
+.waiter-fullscreen-btn .ui-icon,
+.saas-fullscreen-btn .ui-icon {
+  width: 16px;
+  height: 16px;
+}
+
+.waiter-fullscreen-btn {
+  background: rgba(255, 255, 255, 0.12);
+  color: #ffffff;
+  border-color: rgba(255, 255, 255, 0.25);
+  margin-right: 8px;
+}
+
+.waiter-fullscreen-btn:hover {
+  background: rgba(255, 255, 255, 0.22);
+  color: #ffffff;
+  border-color: rgba(255, 255, 255, 0.4);
 }

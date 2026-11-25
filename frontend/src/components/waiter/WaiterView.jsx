@@ -3,9 +3,12 @@ import { useAuth } from '../../context/AuthContext';
 import { api } from '../../services/api';
 import { TableGrid } from '../tables/TableGrid';
 import { WaiterOrderScreen } from './WaiterOrderScreen';
+import { useFullscreen } from '../../hooks/useFullscreen';
+import { Maximize, Minimize } from 'lucide-react';
 
 export function WaiterView() {
   const { user, company, logout } = useAuth();
+  const { isFullscreen, toggleFullscreen } = useFullscreen();
 
   const [tables, setTables] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -157,6 +160,17 @@ export function WaiterView() {
         </div>
 
         <div className="header-user-wrap">
+          <button
+            type="button"
+            className="waiter-fullscreen-btn"
+            onClick={toggleFullscreen}
+            title={isFullscreen ? "Exit Fullscreen" : "Enter Fullscreen (Tablet POS)"}
+            aria-label="Toggle Fullscreen Mode"
+          >
+            {isFullscreen ? <Minimize className="ui-icon" aria-hidden="true" /> : <Maximize className="ui-icon" aria-hidden="true" />}
+            <span className="waiter-fullscreen-text">{isFullscreen ? 'Exit Full' : 'Full Screen'}</span>
+          </button>
+
           <div className="user-pill">
             <span className="user-icon">👤</span>
             <span className="user-name">{user?.fullName || user?.username || 'Waiter'}</span>
