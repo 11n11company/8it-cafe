@@ -161,6 +161,9 @@ export function clearToken() {
   try {
     localStorage.removeItem(TOKEN_KEY);
     localStorage.removeItem(LEGACY_TOKEN_KEY);
+    if (typeof sessionStorage !== 'undefined') {
+      sessionStorage.clear();
+    }
   } catch {
     // Ignore storage errors
   }
@@ -289,8 +292,13 @@ export const api = {
 
   // Authentication & Staff PIN
   auth: {
-    login: (username, password) =>
-      request('/auth/login', { method: 'POST', body: { username, password } }),
+    login: (username, password, companyId) => {
+      const body = { username, password };
+      if (companyId) {
+        body.companyId = companyId;
+      }
+      return request('/auth/login', { method: 'POST', body });
+    },
     getMe: () =>
       request('/auth/me'),
     logout: () =>

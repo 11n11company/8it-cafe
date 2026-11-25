@@ -12,13 +12,21 @@ const { Client } = require('pg');
 const path = require('path');
 const crypto = require('crypto');
 const { getDatabaseConfig, getSanitizedDbInfo } = require('./db-config');
+const { assertSafeTestDatabase } = require('../backend/src/config/test-db-guard');
 require('dotenv').config({ path: path.join(__dirname, '..', '.env') });
 
 const config = getDatabaseConfig(process.env);
 const sanitizedDb = getSanitizedDbInfo(config);
 
-async function runTests() {
-  const client = new Client(config);
+function getVerifyClient(clientConfig = config) {
+  if (process.env.NODE_ENV === 'test') {
+    assertSafeTestDatabase(clientConfig, process.env);
+  }
+  return new Client(clientConfig);
+}
+
+async function runTests(clientOverride = null) {
+  const client = clientOverride || getVerifyClient(config);
   let passed = 0;
   let failed = 0;
   let inTransaction = false;
@@ -638,4 +646,11 @@ async function runTests() {
   }
 }
 
-runTests();
+if (require.main === module) {
+  runTests();
+}
+
+module.exports = {
+  getVerifyClient,
+  runTests
+};

@@ -50,10 +50,10 @@ export function AuthProvider({ children }) {
   }, [refreshUser]);
 
   // Login handler
-  const login = async (username, password) => {
+  const login = async (username, password, companyId) => {
     setError(null);
     try {
-      const res = await api.auth.login(username, password);
+      const res = await api.auth.login(username, password, companyId);
       const { token: newToken, user: userData } = res.data;
       setToken(newToken);
       setTokenState(newToken);

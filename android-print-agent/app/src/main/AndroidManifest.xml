@@ -26,7 +26,7 @@
         android:roundIcon="@drawable/ic_printer"
         android:supportsRtl="true"
         android:theme="@style/Theme.PrintAgent"
-        android:usesCleartextTraffic="true"
+        android:networkSecurityConfig="@xml/network_security_config"
         tools:targetApi="34">
 
         <!-- Main User Interface for Printer IP/Port Setup, Test Prints, and Queue Monitoring -->

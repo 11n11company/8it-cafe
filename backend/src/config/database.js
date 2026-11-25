@@ -6,6 +6,7 @@
 const { Pool } = require('pg');
 const { config } = require('./env');
 const logger = require('../utils/logger');
+const { assertSafeTestDatabase } = require('./test-db-guard');
 
 /**
  * Creates a configured PostgreSQL connection pool instance.
@@ -13,7 +14,7 @@ const logger = require('../utils/logger');
  * @returns {Pool}
  */
 function createPool(overrideConfig = {}) {
-  const isTest = process.env.NODE_ENV === 'test' || process.argv.some((a) => typeof a === 'string' && a.includes('test'));
+  const isTest = process.env.NODE_ENV === 'test';
   const poolConfig = {
     ...config.db,
     ...(isTest ? {
@@ -22,6 +23,12 @@ function createPool(overrideConfig = {}) {
     } : {}),
     ...overrideConfig
   };
+
+  // Centralized test database safety guard:
+  // Strictly prevent tests from running against production or non-test databases
+  if (isTest) {
+    assertSafeTestDatabase(poolConfig);
+  }
 
   const pool = new Pool(poolConfig);
 
@@ -149,6 +156,7 @@ module.exports = {
   createPool,
   query,
   checkConnection,
-  closePool
+  closePool,
+  assertSafeTestDatabase
 };
 

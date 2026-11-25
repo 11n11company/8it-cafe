@@ -75,7 +75,7 @@ function createAgentTokenRateLimiter(options = {}) {
     standardHeaders: true,
     legacyHeaders: false,
     skipSuccessfulRequests: true,
-    validate: { keyGeneratorIpFallback: false },
+    validate: { keyGeneratorIpFallback: false, xForwardedForHeader: false, default: true },
     keyGenerator: (req) => {
       const ip = req.ip || req.socket?.remoteAddress || 'unknown';
       const companyId = typeof req.body?.companyId === 'string' ? req.body.companyId.slice(0, 64) : '-';

@@ -44,7 +44,8 @@ function createAuthRouter(dependencies = {}) {
     const requestId = req.id || null;
 
     try {
-      const { username, password } = req.body || {};
+      const { username, password, companyId, company_id } = req.body || {};
+      const targetCompany = (companyId || company_id || null);
 
       if (!username || typeof username !== 'string' || !password || typeof password !== 'string') {
         return res.status(400).json({
@@ -63,7 +64,7 @@ function createAuthRouter(dependencies = {}) {
       const authResult = await authenticateUser(
         username,
         password,
-        { ipAddress: clientIp, userAgent },
+        { ipAddress: clientIp, userAgent, companyId: targetCompany },
         dbPool
       );
 

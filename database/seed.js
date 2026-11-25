@@ -7,13 +7,21 @@ const fs = require('fs');
 const path = require('path');
 const { Client } = require('pg');
 const { getDatabaseConfig, getSanitizedDbInfo } = require('./db-config');
+const { assertSafeTestDatabase } = require('../backend/src/config/test-db-guard');
 require('dotenv').config({ path: path.join(__dirname, '..', '.env') });
 
 const config = getDatabaseConfig(process.env);
 const sanitizedDb = getSanitizedDbInfo(config);
 
-async function runSeed() {
-  const client = new Client(config);
+function getSeedClient(clientConfig = config) {
+  if (process.env.NODE_ENV === 'test') {
+    assertSafeTestDatabase(clientConfig, process.env);
+  }
+  return new Client(clientConfig);
+}
+
+async function runSeed(clientOverride = null) {
+  const client = clientOverride || getSeedClient(config);
   await client.connect();
 
   try {
@@ -31,8 +39,15 @@ async function runSeed() {
   }
 }
 
-runSeed().catch((err) => {
-  console.error('Seed execution failed:', err);
-  process.exit(1);
-});
+if (require.main === module) {
+  runSeed().catch((err) => {
+    console.error('Seed execution failed:', err);
+    process.exit(1);
+  });
+}
+
+module.exports = {
+  getSeedClient,
+  runSeed
+};
 

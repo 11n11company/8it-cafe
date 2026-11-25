@@ -25,7 +25,26 @@ class ApiClient(private val baseUrlProvider: () -> String) {
     private fun openConnection(endpoint: String, method: String, token: String? = null): HttpURLConnection {
         val cleanBase = baseUrlProvider().trim().trimEnd('/').removeSuffix("/api/v1").removeSuffix("/api")
         val fullUrl = "$cleanBase$endpoint"
-        val conn = URL(fullUrl).openConnection() as HttpURLConnection
+        val parsed = URL(fullUrl)
+        val protocol = parsed.protocol.lowercase()
+
+        if (protocol != "https" && protocol != "http") {
+            throw ApiException(0, "INVALID_URL", "Only HTTP and HTTPS protocols are supported.")
+        }
+
+        if (protocol == "http") {
+            val host = (parsed.host ?: "").lowercase()
+            val isLocal = host == "localhost" || host == "127.0.0.1" || host == "10.0.2.2"
+            if (!isLocal) {
+                throw ApiException(
+                    0,
+                    "INSECURE_CONNECTION_REJECTED",
+                    "Cleartext HTTP is strictly prohibited for remote cloud endpoints. Remote server URLs must use HTTPS."
+                )
+            }
+        }
+
+        val conn = parsed.openConnection() as HttpURLConnection
         conn.requestMethod = method
         conn.connectTimeout = 5000
         conn.readTimeout = 7000

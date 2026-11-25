@@ -832,42 +832,113 @@ async function getDailySalesReport(companyId, options = {}) {
   const params = brandId ? [companyId, range.start, range.end, brandId] : [companyId, range.start, range.end];
   const res = await pool.query(query, params);
 
+  // Query completed refunds for the same period and company (with brand allocation if specified)
+  const refundQuery = brandId
+    ? `
+      SELECT
+        TO_CHAR(rv.created_at AT TIME ZONE 'Asia/Kolkata', 'YYYY-MM-DD') as report_date,
+        COUNT(DISTINCT rv.id)::int as refund_count,
+        COALESCE(SUM(
+          ROUND((brand_lines.brand_line_total / NULLIF(i.grand_total, 0)) * rv.amount, 2)
+        ), 0.00)::numeric(14,2) as refund_amount
+      FROM refund_vouchers rv
+      JOIN invoices i ON rv.invoice_id = i.id
+      JOIN (
+        SELECT invoice_id, SUM(line_total) as brand_line_total
+        FROM invoice_items
+        WHERE brand_id = $4
+        GROUP BY invoice_id
+      ) brand_lines ON i.id = brand_lines.invoice_id
+      WHERE rv.company_id = $1
+        AND rv.status = 'COMPLETED'
+        AND rv.created_at >= $2
+        AND rv.created_at < $3
+      GROUP BY report_date
+      ORDER BY report_date ASC;
+    `
+    : `
+      SELECT
+        TO_CHAR(created_at AT TIME ZONE 'Asia/Kolkata', 'YYYY-MM-DD') as report_date,
+        COUNT(*)::int as refund_count,
+        COALESCE(SUM(amount), 0.00)::numeric(14,2) as refund_amount
+      FROM refund_vouchers
+      WHERE company_id = $1
+        AND status = 'COMPLETED'
+        AND created_at >= $2
+        AND created_at < $3
+      GROUP BY report_date
+      ORDER BY report_date ASC;
+    `;
+
+  const refundRes = await pool.query(refundQuery, params);
+  const refundMap = new Map();
+  for (const r of refundRes.rows) {
+    refundMap.set(r.report_date, {
+      count: parseInt(r.refund_count, 10) || 0,
+      amount: Number(r.refund_amount) || 0
+    });
+  }
+
+  const dateSet = new Set([
+    ...res.rows.map(r => r.report_date),
+    ...refundRes.rows.map(r => r.report_date)
+  ]);
+  const sortedDates = Array.from(dateSet).sort();
+  const invoiceMap = new Map();
+  for (const r of res.rows) {
+    invoiceMap.set(r.report_date, r);
+  }
+
   let totalGross = 0;
   let totalDiscounts = 0;
   let totalTaxable = 0;
   let totalTax = 0;
+  let totalRefunds = 0;
   let totalNet = 0;
   let totalInvoices = 0;
 
-  const days = res.rows.map(r => {
-    const invCount = r.invoice_count;
-    const net = Number(r.net_sales);
-    const gross = Number(r.gross_sales);
-    const disc = Number(r.discounts);
-    const taxVal = Number(r.taxable_amount);
-    const taxes = Number(r.cgst) + Number(r.sgst) + Number(r.igst) + Number(r.cess);
+  const days = sortedDates.map(reportDate => {
+    const inv = invoiceMap.get(reportDate) || {};
+    const ref = refundMap.get(reportDate) || { count: 0, amount: 0 };
 
-    totalGross += gross;
+    const invCount = inv.invoice_count ? parseInt(inv.invoice_count, 10) : 0;
+    const invGross = Number(inv.gross_sales || 0);
+    const disc = Number(inv.discounts || 0);
+    const taxVal = Number(inv.taxable_amount || 0);
+    const cgst = Number(inv.cgst || 0);
+    const sgst = Number(inv.sgst || 0);
+    const igst = Number(inv.igst || 0);
+    const cess = Number(inv.cess || 0);
+    const taxes = cgst + sgst + igst + cess;
+    const rounding = Number(inv.rounding || 0);
+    const invGrandTotal = Number(inv.net_sales || 0);
+    const dayRefund = ref.amount;
+    const dayNet = invGrandTotal - dayRefund;
+
+    totalGross += invGross;
     totalDiscounts += disc;
     totalTaxable += taxVal;
     totalTax += taxes;
-    totalNet += net;
+    totalRefunds += dayRefund;
+    totalNet += dayNet;
     totalInvoices += invCount;
 
     return {
-      date: r.report_date,
+      date: reportDate,
       invoiceCount: invCount,
-      grossSales: gross.toFixed(2),
+      grossSales: invGross.toFixed(2),
       discounts: disc.toFixed(2),
       taxableAmount: taxVal.toFixed(2),
-      cgst: Number(r.cgst).toFixed(2),
-      sgst: Number(r.sgst).toFixed(2),
-      igst: Number(r.igst).toFixed(2),
-      cess: Number(r.cess).toFixed(2),
+      cgst: cgst.toFixed(2),
+      sgst: sgst.toFixed(2),
+      igst: igst.toFixed(2),
+      cess: cess.toFixed(2),
       totalTax: taxes.toFixed(2),
-      rounding: r.rounding ? Number(r.rounding).toFixed(2) : '0.00',
-      netSales: net.toFixed(2),
-      averageInvoiceValue: invCount > 0 ? (net / invCount).toFixed(2) : '0.00'
+      rounding: rounding.toFixed(2),
+      refunds: dayRefund.toFixed(2),
+      totalRefunds: dayRefund.toFixed(2),
+      netSales: dayNet.toFixed(2),
+      averageInvoiceValue: invCount > 0 ? (dayNet / invCount).toFixed(2) : '0.00'
     };
   });
 
@@ -879,6 +950,8 @@ async function getDailySalesReport(companyId, options = {}) {
       discounts: totalDiscounts.toFixed(2),
       taxableAmount: totalTaxable.toFixed(2),
       totalTax: totalTax.toFixed(2),
+      refunds: totalRefunds.toFixed(2),
+      totalRefunds: totalRefunds.toFixed(2),
       netSales: totalNet.toFixed(2),
       averageInvoiceValue: totalInvoices > 0 ? (totalNet / totalInvoices).toFixed(2) : '0.00'
     },
@@ -1343,15 +1416,18 @@ async function getCashierWiseSalesReport(companyId, options = {}) {
 
 /**
  * 4.1 Tax Summary Report
- * Operational GST summary breaking down taxable sales, CGST, SGST, IGST, and Cess.
+ * Operational GST summary breaking down taxable sales, CGST, SGST, IGST, and Cess,
+ * with statutory Credit Note adjustments under Section 34 of the CGST Act.
  */
 async function getTaxSummaryReport(companyId, options = {}) {
   const { preset = 'this_month', startDate, endDate, brandId } = options;
   if (brandId) await validateBrandBelongsToCompany(companyId, brandId);
   const range = resolveDateRange(preset, startDate, endDate);
 
-  // Group by tax_rate_percentage
-  const query = `
+  const params = brandId ? [companyId, range.start, range.end, brandId] : [companyId, range.start, range.end];
+
+  // 1. Outward Invoices grouped by tax_rate_percentage
+  const outwardQuery = `
     SELECT
       ii.tax_rate_percentage,
       SUM(ii.taxable_value)::numeric(14,2) as taxable_amount,
@@ -1370,10 +1446,31 @@ async function getTaxSummaryReport(companyId, options = {}) {
     GROUP BY ii.tax_rate_percentage
     ORDER BY ii.tax_rate_percentage ASC;
   `;
-  const params = brandId ? [companyId, range.start, range.end, brandId] : [companyId, range.start, range.end];
-  const res = await pool.query(query, params);
+  const outwardRes = await pool.query(outwardQuery, params);
 
-  // State-wise Place of Supply summary
+  // 2. Credit Note adjustments grouped by tax_rate_percentage
+  const creditNoteQuery = `
+    SELECT
+      cni.tax_rate_percentage,
+      COALESCE(SUM(cni.taxable_value), 0.00)::numeric(14,2) as taxable_amount,
+      COALESCE(SUM(cni.cgst_amount), 0.00)::numeric(14,2) as cgst,
+      COALESCE(SUM(cni.sgst_amount), 0.00)::numeric(14,2) as sgst,
+      COALESCE(SUM(cni.igst_amount), 0.00)::numeric(14,2) as igst,
+      COALESCE(SUM(cni.cess_amount), 0.00)::numeric(14,2) as cess,
+      COALESCE(SUM(cni.cgst_amount + cni.sgst_amount + cni.igst_amount + cni.cess_amount), 0.00)::numeric(14,2) as total_tax
+    FROM gst_credit_note_items cni
+    JOIN gst_credit_notes cn ON cni.credit_note_id = cn.id
+    WHERE cn.company_id = $1
+      ${brandId ? 'AND cni.brand_id = $4' : ''}
+      AND cn.status = 'ISSUED'
+      AND cn.created_at >= $2
+      AND cn.created_at < $3
+    GROUP BY cni.tax_rate_percentage
+    ORDER BY cni.tax_rate_percentage ASC;
+  `;
+  const creditNoteRes = await pool.query(creditNoteQuery, params);
+
+  // 3. State-wise Place of Supply summary for Outward
   const posQuery = `
     SELECT
       i.place_of_supply_state as state_code,
@@ -1397,64 +1494,262 @@ async function getTaxSummaryReport(companyId, options = {}) {
   `;
   const posRes = await pool.query(posQuery, [companyId, range.start, range.end]);
 
-  let totalTaxable = 0;
-  let totalCgst = 0;
-  let totalSgst = 0;
-  let totalIgst = 0;
-  let totalCess = 0;
-  let totalTax = 0;
+  // 4. State-wise Place of Supply summary for Credit Notes
+  const posCnQuery = `
+    SELECT
+      cn.place_of_supply_state as state_code,
+      COALESCE(sc.state_name, 'Unknown') as state_name,
+      cn.is_interstate,
+      COUNT(cn.id)::int as credit_note_count,
+      SUM(cn.total_taxable_amount)::numeric(14,2) as taxable_amount,
+      SUM(cn.total_cgst_amount)::numeric(14,2) as cgst,
+      SUM(cn.total_sgst_amount)::numeric(14,2) as sgst,
+      SUM(cn.total_igst_amount)::numeric(14,2) as igst,
+      SUM(cn.total_cess_amount)::numeric(14,2) as cess,
+      SUM(cn.grand_total)::numeric(14,2) as grand_total
+    FROM gst_credit_notes cn
+    LEFT JOIN statutory_gst_state_codes sc ON cn.place_of_supply_state = sc.state_code
+    WHERE cn.company_id = $1
+      AND cn.status = 'ISSUED'
+      AND cn.created_at >= $2
+      AND cn.created_at < $3
+    GROUP BY cn.place_of_supply_state, sc.state_name, cn.is_interstate;
+  `;
+  const posCnRes = await pool.query(posCnQuery, [companyId, range.start, range.end]);
+  const posCnMap = new Map();
+  posCnRes.rows.forEach(r => {
+    posCnMap.set(`${r.state_code}:${r.is_interstate}`, r);
+  });
 
-  const rateSlabs = res.rows.map(r => {
-    const taxVal = Number(r.taxable_amount);
-    const cg = Number(r.cgst);
-    const sg = Number(r.sgst);
-    const ig = Number(r.igst);
-    const cs = Number(r.cess);
-    const tt = Number(r.total_tax);
+  // 5. Independently traceable Credit Notes list
+  const creditNotesListRes = await pool.query(
+    `SELECT
+       cn.id,
+       cn.credit_note_number,
+       cn.financial_year,
+       cn.issue_date,
+       cn.original_invoice_number,
+       cn.original_invoice_date,
+       cn.refund_voucher_id,
+       cn.reason,
+       cn.reason_code,
+       cn.is_interstate,
+       cn.total_taxable_amount,
+       cn.total_cgst_amount,
+       cn.total_sgst_amount,
+       cn.total_igst_amount,
+       cn.total_cess_amount,
+       cn.grand_total,
+       cn.created_at
+     FROM gst_credit_notes cn
+     WHERE cn.company_id = $1
+       AND cn.status = 'ISSUED'
+       AND cn.created_at >= $2
+       AND cn.created_at < $3
+     ORDER BY cn.created_at DESC`,
+    [companyId, range.start, range.end]
+  );
 
-    totalTaxable += taxVal;
-    totalCgst += cg;
-    totalSgst += sg;
-    totalIgst += ig;
-    totalCess += cs;
-    totalTax += tt;
+  // Map credit note slabs by rate percentage
+  const creditNoteSlabMap = new Map();
+  for (const r of creditNoteRes.rows) {
+    creditNoteSlabMap.set(Number(r.tax_rate_percentage).toFixed(2), r);
+  }
+
+  const outwardSlabMap = new Map();
+  for (const r of outwardRes.rows) {
+    outwardSlabMap.set(Number(r.tax_rate_percentage).toFixed(2), r);
+  }
+
+  const allRates = Array.from(new Set([
+    ...Array.from(outwardSlabMap.keys()),
+    ...Array.from(creditNoteSlabMap.keys())
+  ])).sort((a, b) => Number(a) - Number(b));
+
+  let totalOutwardTaxable = 0;
+  let totalOutwardCgst = 0;
+  let totalOutwardSgst = 0;
+  let totalOutwardIgst = 0;
+  let totalOutwardCess = 0;
+  let totalOutwardTax = 0;
+
+  let totalCreditTaxable = 0;
+  let totalCreditCgst = 0;
+  let totalCreditSgst = 0;
+  let totalCreditIgst = 0;
+  let totalCreditCess = 0;
+  let totalCreditTax = 0;
+
+  let totalNetTaxable = 0;
+  let totalNetCgst = 0;
+  let totalNetSgst = 0;
+  let totalNetIgst = 0;
+  let totalNetCess = 0;
+  let totalNetTax = 0;
+
+  const rateSlabs = allRates.map(rateStr => {
+    const outRow = outwardSlabMap.get(rateStr) || {};
+    const cnRow = creditNoteSlabMap.get(rateStr) || {};
+
+    const outTaxable = Number(outRow.taxable_amount || 0);
+    const outCg = Number(outRow.cgst || 0);
+    const outSg = Number(outRow.sgst || 0);
+    const outIg = Number(outRow.igst || 0);
+    const outCs = Number(outRow.cess || 0);
+    const outTt = Number(outRow.total_tax || 0);
+
+    const cnTaxable = Number(cnRow.taxable_amount || 0);
+    const cnCg = Number(cnRow.cgst || 0);
+    const cnSg = Number(cnRow.sgst || 0);
+    const cnIg = Number(cnRow.igst || 0);
+    const cnCs = Number(cnRow.cess || 0);
+    const cnTt = Number(cnRow.total_tax || 0);
+
+    const netTaxable = outTaxable - cnTaxable;
+    const netCg = outCg - cnCg;
+    const netSg = outSg - cnSg;
+    const netIg = outIg - cnIg;
+    const netCs = outCs - cnCs;
+    const netTt = outTt - cnTt;
+
+    totalOutwardTaxable += outTaxable;
+    totalOutwardCgst += outCg;
+    totalOutwardSgst += outSg;
+    totalOutwardIgst += outIg;
+    totalOutwardCess += outCs;
+    totalOutwardTax += outTt;
+
+    totalCreditTaxable += cnTaxable;
+    totalCreditCgst += cnCg;
+    totalCreditSgst += cnSg;
+    totalCreditIgst += cnIg;
+    totalCreditCess += cnCs;
+    totalCreditTax += cnTt;
+
+    totalNetTaxable += netTaxable;
+    totalNetCgst += netCg;
+    totalNetSgst += netSg;
+    totalNetIgst += netIg;
+    totalNetCess += netCs;
+    totalNetTax += netTt;
 
     return {
-      taxRatePercentage: Number(r.tax_rate_percentage).toFixed(2),
-      taxableAmount: taxVal.toFixed(2),
-      cgst: cg.toFixed(2),
-      sgst: sg.toFixed(2),
-      igst: ig.toFixed(2),
-      cess: cs.toFixed(2),
-      totalTax: tt.toFixed(2)
+      taxRatePercentage: rateStr,
+      // Original Outward
+      outwardTaxableAmount: outTaxable.toFixed(2),
+      outwardCgst: outCg.toFixed(2),
+      outwardSgst: outSg.toFixed(2),
+      outwardIgst: outIg.toFixed(2),
+      outwardCess: outCs.toFixed(2),
+      outwardTotalTax: outTt.toFixed(2),
+      // Credit Note Adjustments
+      creditNoteTaxableAmount: cnTaxable.toFixed(2),
+      creditNoteCgst: cnCg.toFixed(2),
+      creditNoteSgst: cnSg.toFixed(2),
+      creditNoteIgst: cnIg.toFixed(2),
+      creditNoteCess: cnCs.toFixed(2),
+      creditNoteTotalTax: cnTt.toFixed(2),
+      // Net Outward (Backward compatible fields)
+      taxableAmount: netTaxable.toFixed(2),
+      cgst: netCg.toFixed(2),
+      sgst: netSg.toFixed(2),
+      igst: netIg.toFixed(2),
+      cess: netCs.toFixed(2),
+      totalTax: netTt.toFixed(2),
+      netTaxableAmount: netTaxable.toFixed(2),
+      netCgst: netCg.toFixed(2),
+      netSgst: netSg.toFixed(2),
+      netIgst: netIg.toFixed(2),
+      netCess: netCs.toFixed(2),
+      netTotalTax: netTt.toFixed(2)
     };
   });
 
-  const stateBreakdown = posRes.rows.map(r => ({
-    stateCode: r.state_code,
-    stateName: r.state_name,
-    isInterstate: r.is_interstate,
-    invoiceCount: r.invoice_count,
-    taxableAmount: Number(r.taxable_amount).toFixed(2),
-    cgst: Number(r.cgst).toFixed(2),
-    sgst: Number(r.sgst).toFixed(2),
-    igst: Number(r.igst).toFixed(2),
-    cess: Number(r.cess).toFixed(2),
-    grandTotal: Number(r.grand_total).toFixed(2)
-  }));
+  const stateBreakdown = posRes.rows.map(r => {
+    const key = `${r.state_code}:${r.is_interstate}`;
+    const cnPos = posCnMap.get(key) || {};
+
+    const outTaxable = Number(r.taxable_amount || 0);
+    const outCg = Number(r.cgst || 0);
+    const outSg = Number(r.sgst || 0);
+    const outIg = Number(r.igst || 0);
+    const outCs = Number(r.cess || 0);
+    const outGrand = Number(r.grand_total || 0);
+
+    const cnTaxable = Number(cnPos.taxable_amount || 0);
+    const cnCg = Number(cnPos.cgst || 0);
+    const cnSg = Number(cnPos.sgst || 0);
+    const cnIg = Number(cnPos.igst || 0);
+    const cnCs = Number(cnPos.cess || 0);
+    const cnGrand = Number(cnPos.grand_total || 0);
+
+    return {
+      stateCode: r.state_code,
+      stateName: r.state_name,
+      isInterstate: r.is_interstate,
+      invoiceCount: r.invoice_count,
+      creditNoteCount: Number(cnPos.credit_note_count || 0),
+      // Outward
+      outwardTaxableAmount: outTaxable.toFixed(2),
+      outwardCgst: outCg.toFixed(2),
+      outwardSgst: outSg.toFixed(2),
+      outwardIgst: outIg.toFixed(2),
+      outwardCess: outCs.toFixed(2),
+      outwardGrandTotal: outGrand.toFixed(2),
+      // Credit note adjustments
+      creditNoteTaxableAmount: cnTaxable.toFixed(2),
+      creditNoteCgst: cnCg.toFixed(2),
+      creditNoteSgst: cnSg.toFixed(2),
+      creditNoteIgst: cnIg.toFixed(2),
+      creditNoteCess: cnCs.toFixed(2),
+      creditNoteGrandTotal: cnGrand.toFixed(2),
+      // Net
+      taxableAmount: (outTaxable - cnTaxable).toFixed(2),
+      cgst: (outCg - cnCg).toFixed(2),
+      sgst: (outSg - cnSg).toFixed(2),
+      igst: (outIg - cnIg).toFixed(2),
+      cess: (outCs - cnCs).toFixed(2),
+      grandTotal: (outGrand - cnGrand).toFixed(2),
+      netTaxableAmount: (outTaxable - cnTaxable).toFixed(2),
+      netGrandTotal: (outGrand - cnGrand).toFixed(2)
+    };
+  });
 
   return {
     period: range,
     summary: {
-      totalTaxableAmount: totalTaxable.toFixed(2),
-      totalCgst: totalCgst.toFixed(2),
-      totalSgst: totalSgst.toFixed(2),
-      totalIgst: totalIgst.toFixed(2),
-      totalCess: totalCess.toFixed(2),
-      totalTaxAmount: totalTax.toFixed(2)
+      // Outward Totals
+      outwardTaxableAmount: totalOutwardTaxable.toFixed(2),
+      outwardCgst: totalOutwardCgst.toFixed(2),
+      outwardSgst: totalOutwardSgst.toFixed(2),
+      outwardIgst: totalOutwardIgst.toFixed(2),
+      outwardCess: totalOutwardCess.toFixed(2),
+      outwardTaxAmount: totalOutwardTax.toFixed(2),
+      // Credit Note Totals
+      creditNoteTaxableAmount: totalCreditTaxable.toFixed(2),
+      creditNoteCgst: totalCreditCgst.toFixed(2),
+      creditNoteSgst: totalCreditSgst.toFixed(2),
+      creditNoteIgst: totalCreditIgst.toFixed(2),
+      creditNoteCess: totalCreditCess.toFixed(2),
+      creditNoteTaxAmount: totalCreditTax.toFixed(2),
+      // Net Totals
+      netTaxableAmount: totalNetTaxable.toFixed(2),
+      netCgst: totalNetCgst.toFixed(2),
+      netSgst: totalNetSgst.toFixed(2),
+      netIgst: totalNetIgst.toFixed(2),
+      netCess: totalNetCess.toFixed(2),
+      netTaxAmount: totalNetTax.toFixed(2),
+      // Backward compatibility keys (Net values)
+      totalTaxableAmount: totalNetTaxable.toFixed(2),
+      totalCgst: totalNetCgst.toFixed(2),
+      totalSgst: totalNetSgst.toFixed(2),
+      totalIgst: totalNetIgst.toFixed(2),
+      totalCess: totalNetCess.toFixed(2),
+      totalTaxAmount: totalNetTax.toFixed(2)
     },
     rateSlabs,
     placeOfSupplyBreakdown: stateBreakdown,
+    creditNotes: creditNotesListRes.rows,
     meta: { disclaimer: STATUTORY_DISCLAIMER }
   };
 }

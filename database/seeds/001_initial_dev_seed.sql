@@ -47,12 +47,6 @@ INSERT INTO brands (id, company_id, name, code, description, display_order, is_a
     TRUE
 ) ON CONFLICT (id) DO NOTHING;
 
--- 3. System Roles
-INSERT INTO roles (id, company_id, code, name, description, is_system) VALUES
-('33333333-3333-4333-8333-333333333301', '11111111-1111-4111-8111-111111111111', 'ADMIN', 'System Administrator', 'Full administrative access', TRUE),
-('33333333-3333-4333-8333-333333333302', '11111111-1111-4111-8111-111111111111', 'STORE_MANAGER', 'Store Manager', 'Operational manager access', TRUE),
-('33333333-3333-4333-8333-333333333303', '11111111-1111-4111-8111-111111111111', 'CASHIER', 'Counter Cashier', 'Point of sale billing and manual KOT trigger access', TRUE)
-ON CONFLICT (id) DO NOTHING;
 
 -- 4. Permissions
 INSERT INTO permissions (id, code, module, description) VALUES
@@ -65,13 +59,6 @@ INSERT INTO permissions (id, code, module, description) VALUES
 ('44444444-4444-4444-8444-444444444407', 'reports.consolidated', 'reports', 'View consolidated company-level GST reports')
 ON CONFLICT (id) DO NOTHING;
 
--- Map Cashier Permissions
-INSERT INTO role_permissions (role_id, permission_id) VALUES
-('33333333-3333-4333-8333-333333333303', '44444444-4444-4444-8444-444444444401'),
-('33333333-3333-4333-8333-333333333303', '44444444-4444-4444-8444-444444444402'),
-('33333333-3333-4333-8333-333333333303', '44444444-4444-4444-8444-444444444404'),
-('33333333-3333-4333-8333-333333333303', '44444444-4444-4444-8444-444444444405')
-ON CONFLICT DO NOTHING;
 
 -- 5. Sample Cashier User
 INSERT INTO users (
@@ -79,7 +66,7 @@ INSERT INTO users (
 ) VALUES (
     '55555555-5555-4555-8555-555555555501',
     '11111111-1111-4111-8111-111111111111',
-    '33333333-3333-4333-8333-333333333303',
+    'e2b8c001-0000-4000-a000-000000000003',
     'cashier1',
     '$2b$12$e8Z9dDmywOEx5FkmL0Yk9O0vU4E18dZb6rL2T3Xv3.dummyDevHash',
     '$2b$12$K1234dummyPinHash',

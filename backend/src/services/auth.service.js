@@ -29,7 +29,7 @@ class AuthenticationError extends Error {
 /**
  * Authenticates user credentials, generates access token, and returns safe user profile.
  * Generic error messaging protects against username enumeration.
- * 
+ *
  * @param {string} username
  * @param {string} password
  * @param {Object} [context] Request context (ipAddress, userAgent)
@@ -41,26 +41,74 @@ async function authenticateUser(username, password, context = {}, dbPool) {
     throw new AuthenticationError('Username and password are required', 'VALIDATION_FAILED', 400);
   }
 
-  const cleanUsername = username.trim();
+  let cleanUsername = username.trim();
   const { ipAddress, userAgent } = context;
+  let companyContext = (context.companyId && typeof context.companyId === 'string' && context.companyId.trim().length > 0)
+    ? context.companyId.trim()
+    : null;
 
-  // 1. Fetch user by username joined with parent company and assigned role
-  const userResult = await query(`
-    SELECT 
-      u.id, u.username, u.password_hash, u.full_name, u.email, u.is_active, u.token_version,
-      u.company_id,
-      c.legal_name AS company_legal_name, c.trade_name AS company_trade_name, c.is_active AS company_active,
-      r.id AS role_id, r.code AS role_code, r.name AS role_name
-    FROM users u
-    JOIN companies c ON u.company_id = c.id
-    JOIN roles r ON u.role_id = r.id
-    WHERE u.username = $1;
-  `, [cleanUsername], dbPool);
+  // Support scoped identifier format: "companyIdentifier/username" or "companyIdentifier\username"
+  if (!companyContext) {
+    if (cleanUsername.includes('/')) {
+      const parts = cleanUsername.split('/');
+      if (parts.length === 2 && parts[0].trim() && parts[1].trim()) {
+        companyContext = parts[0].trim();
+        cleanUsername = parts[1].trim();
+      }
+    } else if (cleanUsername.includes('\\')) {
+      const parts = cleanUsername.split('\\');
+      if (parts.length === 2 && parts[0].trim() && parts[1].trim()) {
+        companyContext = parts[0].trim();
+        cleanUsername = parts[1].trim();
+      }
+    }
+  }
 
-  const user = userResult.rows[0];
+  // 1. Fetch user by username (scoped to company if provided)
+  let userResult;
+  if (companyContext) {
+    const isUuid = UUID_REGEX.test(companyContext);
+    if (isUuid) {
+      userResult = await query(`
+        SELECT
+          u.id, u.username, u.password_hash, u.full_name, u.email, u.is_active, u.token_version,
+          u.company_id,
+          c.legal_name AS company_legal_name, c.trade_name AS company_trade_name, c.is_active AS company_active,
+          r.id AS role_id, r.code AS role_code, r.name AS role_name
+        FROM users u
+        JOIN companies c ON u.company_id = c.id
+        JOIN roles r ON u.role_id = r.id
+        WHERE u.username = $1 AND c.id = $2;
+      `, [cleanUsername, companyContext], dbPool);
+    } else {
+      userResult = await query(`
+        SELECT
+          u.id, u.username, u.password_hash, u.full_name, u.email, u.is_active, u.token_version,
+          u.company_id,
+          c.legal_name AS company_legal_name, c.trade_name AS company_trade_name, c.is_active AS company_active,
+          r.id AS role_id, r.code AS role_code, r.name AS role_name
+        FROM users u
+        JOIN companies c ON u.company_id = c.id
+        JOIN roles r ON u.role_id = r.id
+        WHERE u.username = $1 AND UPPER(c.gstin) = UPPER($2);
+      `, [cleanUsername, companyContext], dbPool);
+    }
+  } else {
+    userResult = await query(`
+      SELECT
+        u.id, u.username, u.password_hash, u.full_name, u.email, u.is_active, u.token_version,
+        u.company_id,
+        c.legal_name AS company_legal_name, c.trade_name AS company_trade_name, c.is_active AS company_active,
+        r.id AS role_id, r.code AS role_code, r.name AS role_name
+      FROM users u
+      JOIN companies c ON u.company_id = c.id
+      JOIN roles r ON u.role_id = r.id
+      WHERE u.username = $1;
+    `, [cleanUsername], dbPool);
+  }
 
   // Unknown username: Return generic invalid credentials
-  if (!user) {
+  if (!userResult || userResult.rows.length === 0) {
     await recordAuditEvent({
       companyId: null,
       userId: null,
@@ -74,6 +122,24 @@ async function authenticateUser(username, password, context = {}, dbPool) {
 
     throw new AuthenticationError('Invalid username or password', 'INVALID_CREDENTIALS', 401);
   }
+
+  // Ambiguous username without company context: Fail closed to prevent arbitrary company selection
+  if (userResult.rows.length > 1) {
+    await recordAuditEvent({
+      companyId: null,
+      userId: null,
+      action: 'AUTH_LOGIN_FAILED',
+      entityType: 'USER',
+      entityId: 'ambiguous_identity',
+      newValues: { reason: 'AMBIGUOUS_USERNAME_MULTIPLE_COMPANIES', count: userResult.rows.length },
+      ipAddress,
+      userAgent
+    }, dbPool);
+
+    throw new AuthenticationError('Invalid username or password', 'INVALID_CREDENTIALS', 401);
+  }
+
+  const user = userResult.rows[0];
 
   // Inactive user or inactive company account: Return generic invalid credentials
   if (!user.is_active || !user.company_active) {
@@ -174,14 +240,14 @@ async function authenticateUser(username, password, context = {}, dbPool) {
 
 /**
  * Retrieves hydrated user context and permissions for an authenticated session.
- * 
+ *
  * @param {string} userId
  * @param {import('pg').Pool} [dbPool]
  * @returns {Promise<Object>}
  */
 async function getUserProfile(userId, dbPool) {
   const userResult = await query(`
-    SELECT 
+    SELECT
       u.id, u.username, u.full_name, u.email, u.is_active, u.token_version,
       u.company_id,
       c.legal_name AS company_legal_name, c.trade_name AS company_trade_name, c.is_active AS company_active,
@@ -228,7 +294,7 @@ async function getUserProfile(userId, dbPool) {
 
 /**
  * Revokes an active JWT access token and stores its SHA-256 hash in the database.
- * 
+ *
  * @param {Object} params
  * @param {string} params.companyId
  * @param {string} params.userId
@@ -242,7 +308,7 @@ async function revokeToken({ companyId, userId, token, reason = 'LOGOUT', contex
 
   const tokenHash = hashToken(token);
   const decoded = decodeToken(token);
-  
+
   // Determine token expiry; default to 24 hours if unparsed
   const expiresAt = (decoded && decoded.exp)
     ? new Date(decoded.exp * 1000)
@@ -276,15 +342,15 @@ async function revokeToken({ companyId, userId, token, reason = 'LOGOUT', contex
 
 /**
  * Checks if a token hash has been recorded in the revocation denylist.
- * 
+ *
  * @param {string} tokenHash SHA-256 digest
  * @param {import('pg').Pool} [dbPool]
  * @returns {Promise<boolean>}
  */
 async function isTokenRevoked(tokenHash, dbPool) {
   const result = await query(`
-    SELECT id FROM revoked_tokens 
-    WHERE token_hash = $1 
+    SELECT id FROM revoked_tokens
+    WHERE token_hash = $1
       AND expires_at > CURRENT_TIMESTAMP;
   `, [tokenHash], dbPool);
 

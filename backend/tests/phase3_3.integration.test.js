@@ -915,9 +915,10 @@ describe('Phase 3.3 — Company, Brand, User & Role Management Integration Tests
           WHERE code IN ('user:manage_roles', 'user:reset_password');
         `);
 
-        // Assert exactly 22 permissions remain from Migration 012 (excluding subsequent tax/table/kot/printer migrations)
-        const countRes = await testClient.query("SELECT count(*)::int as count FROM permissions WHERE code != 'user:reset_pin' AND code NOT LIKE 'tax:%' AND code NOT LIKE 'table:%' AND code NOT LIKE 'kot:%' AND code NOT LIKE 'printer%';");
-        assert.strictEqual(countRes.rows[0].count, 22);
+        // Assert 22 canonical permissions plus 7 preserved legacy permissions remain
+// (excluding subsequent tax/table/kot/printer migrations).
+const countRes = await testClient.query("SELECT count(*)::int as count FROM permissions WHERE code != 'user:reset_pin' AND code NOT LIKE 'tax:%' AND code NOT LIKE 'table:%' AND code NOT LIKE 'kot:%' AND code NOT LIKE 'printer%';");
+assert.strictEqual(countRes.rows[0].count, 29);
 
         // Assert role:read and user:update are still intact
         const legacyPerms = await testClient.query("SELECT code FROM permissions WHERE code IN ('role:read', 'user:update') ORDER BY code;");

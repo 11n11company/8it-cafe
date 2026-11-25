@@ -44,9 +44,27 @@ const errorHandler = require('./middleware/error-handler.js');
 function createApp(options = {}) {
   const app = express();
 
+  // Configure reverse proxy trust: Railway edge proxy sits 1 hop upstream.
+  // This guarantees req.ip reliably extracts the true client IP and ignores spoofed X-Forwarded-For headers.
+  const trustProxySetting = process.env.TRUST_PROXY !== undefined
+    ? (isNaN(Number(process.env.TRUST_PROXY)) ? process.env.TRUST_PROXY : Number(process.env.TRUST_PROXY))
+    : 1;
+  app.set('trust proxy', trustProxySetting);
+
   // 1. Basic security headers via Helmet
   app.use(helmet({
-    contentSecurityPolicy: false, // REST APIs do not serve HTML/scripts
+    contentSecurityPolicy: {
+      directives: {
+        defaultSrc: ["'self'"],
+        scriptSrc: ["'self'"],
+        styleSrc: ["'self'", "'unsafe-inline'"],
+        imgSrc: ["'self'", 'data:', 'blob:'],
+        connectSrc: ["'self'", ...(config.allowedOrigins || [])],
+        fontSrc: ["'self'", 'data:'],
+        objectSrc: ["'none'"],
+        frameAncestors: ["'none'"]
+      }
+    },
     crossOriginEmbedderPolicy: false
   }));
 
@@ -67,12 +85,19 @@ function createApp(options = {}) {
       if (isAllowed) {
         callback(null, true);
       } else {
-        callback(new Error(`CORS origin "${origin}" not allowed by policy`));
+        callback(null, false);
       }
     },
     credentials: true,
     methods: ['GET', 'HEAD', 'PUT', 'PATCH', 'POST', 'DELETE', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'X-Request-Id'],
+    allowedHeaders: [
+      'Content-Type',
+      'Authorization',
+      'X-Requested-With',
+      'X-Request-Id',
+      'X-Idempotency-Key'
+    ],
+    optionsSuccessStatus: 204,
     ...(options.corsConfig || {})
   };
   app.use(cors(corsOptions));

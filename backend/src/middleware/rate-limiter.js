@@ -13,13 +13,14 @@ const { config } = require('../config/env');
  */
 function createLoginRateLimiter(options = {}) {
   const windowMs = options.windowMs || config.auth?.rateLimitWindowMs || 15 * 60 * 1000;
-  const max = options.max || config.auth?.rateLimitMax || 10;
+  const max = options.max || (process.env.NODE_ENV === 'test' ? 10000 : (config.auth?.rateLimitMax || 10));
 
   return rateLimit({
     windowMs,
     max,
     standardHeaders: true,
     legacyHeaders: false,
+    validate: { xForwardedForHeader: false, default: true },
     handler: (req, res) => {
       const timestamp = new Date().toISOString();
       const requestId = req.id || null;
@@ -44,14 +45,14 @@ function createLoginRateLimiter(options = {}) {
  */
 function createPinRateLimiter(options = {}) {
   const windowMs = options.windowMs || 15 * 60 * 1000;
-  const max = options.max || 30;
+  const max = options.max || (process.env.NODE_ENV === 'test' ? 10000 : 30);
 
   return rateLimit({
     windowMs,
     max,
     standardHeaders: true,
     legacyHeaders: false,
-    validate: { keyGeneratorIpFallback: false },
+    validate: { keyGeneratorIpFallback: false, xForwardedForHeader: false, default: true },
     keyGenerator: (req) => {
       const userId = req.user?.id || 'anonymous';
       const ip = req.ip || req.socket?.remoteAddress || 'unknown';
@@ -89,6 +90,7 @@ function createApiRateLimiter(options = {}) {
     max,
     standardHeaders: true,
     legacyHeaders: false,
+    validate: { xForwardedForHeader: false, default: true },
     handler: (req, res) => {
       const timestamp = new Date().toISOString();
       const requestId = req.id || null;

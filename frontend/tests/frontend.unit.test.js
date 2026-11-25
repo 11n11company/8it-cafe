@@ -721,12 +721,17 @@ describe('Frontend POS & Administration Interface Tests', () => {
       assert.ok(modalCode.includes('Select Staff Member to Switch'), 'Modal prompt must guide staff switching');
     });
 
-    it('15.5 API request envelope preserves Authorization header when options.headers (such as X-Idempotency-Key) are provided', () => {
-      const apiCode = fs.readFileSync(path.join(__dirname, '../src/services/api.js'), 'utf8');
-      // Ensure config spreads ...options before headers so options.headers does not overwrite Authorization
-      assert.ok(
-        apiCode.includes('...options,\n    method: options.method || \'GET\',\n    headers') ||
-        apiCode.includes('...options, method: options.method || \'GET\', headers'),
+        it('15.5 API request envelope preserves Authorization header when options.headers (such as X-Idempotency-Key) are provided', () => {
+      const apiCode = fs.readFileSync(
+        path.join(__dirname, '../src/services/api.js'),
+        'utf8'
+      );
+
+      // Ensure config spreads ...options before headers so options.headers
+      // cannot overwrite the Authorization header.
+      assert.match(
+        apiCode,
+        /\.\.\.options,\s*method:\s*options\.method\s*\|\|\s*'GET',\s*headers/,
         'api.js request() must place headers after ...options to avoid erasing Authorization'
       );
     });

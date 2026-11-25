@@ -13,6 +13,7 @@ const { createPool } = require('../src/config/database');
 const { createApp } = require('../src/app');
 const { config } = require('../src/config/env');
 const { hashToken } = require('../src/utils/jwt');
+const { assertSafeTestDatabase } = require('../src/config/test-db-guard');
 
 describe('Phase 3.2 Real PostgreSQL Authentication Integration Test', () => {
   let pool;
@@ -37,17 +38,8 @@ describe('Phase 3.2 Real PostgreSQL Authentication Integration Test', () => {
   };
 
   before(async () => {
-    // 0. Safety Check: Verify local database and correct DB name
-    const dbHost = config.db.host || 'localhost';
-    const dbName = config.db.database || 'cafe_cloud_pos';
-    const isLocalHost = ['localhost', '127.0.0.1', '::1'].includes(dbHost);
-
-    if (!isLocalHost || dbName !== 'cafe_cloud_pos') {
-      throw new Error(
-        `SAFETY ABORT: Refusing to run integration test against host="${dbHost}" db="${dbName}". ` +
-        `Target must be a local "cafe_cloud_pos" database.`
-      );
-    }
+    // 0. Safety Check: Verify local database using fail-closed test-db-guard
+    assertSafeTestDatabase(config.db, process.env);
 
     pool = createPool();
     app = createApp({ dbPool: pool });
@@ -104,6 +96,7 @@ describe('Phase 3.2 Real PostgreSQL Authentication Integration Test', () => {
       const cleanupClient = await pool.connect();
       try {
         await cleanupClient.query('BEGIN;');
+        await cleanupClient.query("SET LOCAL cafe.allow_test_cleanup = 'on';");
 
         if (inserted.user) {
           await cleanupClient.query('DELETE FROM revoked_tokens WHERE user_id = $1;', [fixture.userId]);

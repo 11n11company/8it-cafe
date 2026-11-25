@@ -109,7 +109,7 @@ export function LoginScreen() {
     const cleanUser = username.trim();
     const cleanPass = password.trim();
     if (!cleanUser || !cleanPass) {
-      setError('Please enter both email/phone and password.');
+      setError('Please enter both username and password.');
       return;
     }
 
@@ -175,7 +175,7 @@ export function LoginScreen() {
 
         {/* Form */}
         <form onSubmit={handleSubmit}>
-          {/* Email or Phone Input */}
+          {/* Username Input */}
           <div className="cafe-input-group">
             <div className="cafe-input-wrapper">
               <span className="cafe-input-icon">
@@ -196,7 +196,7 @@ export function LoginScreen() {
               <input
                 type="text"
                 className="cafe-input-field"
-                placeholder="Email or Phone"
+                placeholder="Username"
                 value={username}
                 onChange={(e) => setUsername(e.target.value)}
                 autoFocus

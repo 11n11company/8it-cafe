@@ -1148,16 +1148,47 @@ async function restoreInvoice(companyId, userId, invoiceId, payload = {}) {
 
 /**
  * Creates and finalizes refund voucher + payment allocations for a PAID invoice.
+ * Supports partial refunds, atomic concurrency locking, and idempotency key caching.
  */
-async function refundInvoice(companyId, userId, invoiceId, payload) {
-  const { reason, amount } = payload;
+async function refundInvoice(companyId, userId, invoiceId, payload, idempotencyKey = null) {
+  const { reason, amount } = payload || {};
   if (!reason || typeof reason !== 'string' || reason.trim().length === 0) {
     throw new BillingError('Refund reason is required.', 'REFUND_REASON_REQUIRED', 400);
   }
 
+  // Canonicalize payload for idempotency if key provided
+  const payloadCanonical = JSON.stringify({
+    invoiceId,
+    amount: amount !== undefined ? amount : null,
+    reason: reason.trim()
+  });
+  const payloadHash = crypto.createHash('sha256').update(payloadCanonical).digest('hex');
+
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
+
+    // Advisory lock & check on idempotency key if provided
+    if (idempotencyKey) {
+      const keyLockHash = crypto.createHash('sha256').update(`${companyId}:refund:${idempotencyKey}`).digest().readInt32BE(0);
+      await client.query('SELECT pg_advisory_xact_lock($1)', [keyLockHash]);
+
+      const existingIdemp = await client.query(
+        `SELECT request_params_hash, response_status_code, response_body
+         FROM idempotency_keys
+         WHERE company_id = $1 AND key = $2`,
+        [companyId, idempotencyKey]
+      );
+
+      if (existingIdemp.rows.length > 0) {
+        const row = existingIdemp.rows[0];
+        if (row.request_params_hash !== payloadHash) {
+          throw new BillingError('IDEMPOTENCY_KEY_PAYLOAD_MISMATCH', 'IDEMPOTENCY_KEY_PAYLOAD_MISMATCH', 409);
+        }
+        await client.query('COMMIT');
+        return typeof row.response_body === 'string' ? JSON.parse(row.response_body) : row.response_body;
+      }
+    }
 
     // Row lock invoice
     const invRes = await client.query(
@@ -1173,6 +1204,9 @@ async function refundInvoice(companyId, userId, invoiceId, payload) {
     }
 
     const inv = invRes.rows[0];
+    if (inv.payment_status === 'REFUNDED') {
+      throw new BillingError('Invoice is already fully refunded.', 'INVOICE_NOT_PAID', 400);
+    }
     if (inv.payment_status !== 'PAID') {
       throw new BillingError(`Cannot refund invoice in status "${inv.payment_status}". Must be PAID.`, 'INVOICE_NOT_PAID', 400);
     }
@@ -1206,11 +1240,6 @@ async function refundInvoice(companyId, userId, invoiceId, payload) {
 
     // Determine target refund amount
     const grandTotalPaise = stringToPaise(inv.grand_total);
-    const refundTargetPaise = amount !== undefined ? stringToPaise(amount) : grandTotalPaise;
-
-    if (refundTargetPaise <= 0n) {
-      throw new BillingError('Refund amount must be greater than zero.', 'INVALID_REFUND_AMOUNT', 400);
-    }
 
     // Calculate available balance across payments
     let availableTotalPaise = 0n;
@@ -1224,6 +1253,16 @@ async function refundInvoice(companyId, userId, invoiceId, payload) {
         paymentBalances.push({ id: p.id, remainingPaise: remPaise });
         availableTotalPaise += remPaise;
       }
+    }
+
+    if (availableTotalPaise <= 0n) {
+      throw new BillingError('Invoice has no remaining refundable balance.', 'INVOICE_NOT_PAID', 400);
+    }
+
+    const refundTargetPaise = (amount !== undefined && amount !== null) ? stringToPaise(amount) : availableTotalPaise;
+
+    if (refundTargetPaise <= 0n) {
+      throw new BillingError('Refund amount must be greater than zero.', 'INVALID_REFUND_AMOUNT', 400);
     }
 
     if (refundTargetPaise > availableTotalPaise) {
@@ -1269,13 +1308,26 @@ async function refundInvoice(companyId, userId, invoiceId, payload) {
       [voucher.id]
     );
 
-    // 4. Update invoice to REFUNDED
-    await client.query(
-      `UPDATE invoices
-       SET payment_status = 'REFUNDED', updated_at = clock_timestamp()
-       WHERE id = $1`,
-      [invoiceId]
-    );
+    // 4. Update invoice status: REFUNDED only if remaining balance is zero, otherwise remain PAID
+    const newRemainingPaise = availableTotalPaise - refundTargetPaise;
+    const isFullyRefunded = (newRemainingPaise === 0n);
+    const finalPaymentStatus = isFullyRefunded ? 'REFUNDED' : 'PAID';
+
+    if (isFullyRefunded) {
+      await client.query(
+        `UPDATE invoices
+         SET payment_status = 'REFUNDED', updated_at = clock_timestamp()
+         WHERE id = $1`,
+        [invoiceId]
+      );
+    } else {
+      await client.query(
+        `UPDATE invoices
+         SET updated_at = clock_timestamp()
+         WHERE id = $1`,
+        [invoiceId]
+      );
+    }
 
     // 5. Audit log
     await recordAuditEventTx(client, {
@@ -1288,24 +1340,48 @@ async function refundInvoice(companyId, userId, invoiceId, payload) {
         invoice_number: inv.invoice_number,
         voucher_id: voucher.id,
         refund_amount: paiseToString(refundTargetPaise),
+        payment_status: finalPaymentStatus,
+        remaining_balance: paiseToString(newRemainingPaise),
         allocations: allocations.map(a => ({ payment_id: a.payment_id, amount: a.amount }))
       }
     });
 
-    await client.query('COMMIT');
-    return {
+    const totalRefundedPaise = grandTotalPaise - newRemainingPaise;
+    const responseData = {
       success: true,
       invoiceId,
       invoiceNumber: inv.invoice_number,
-      paymentStatus: 'REFUNDED',
+      paymentStatus: finalPaymentStatus,
+      isFullyRefunded,
+      refundAmount: paiseToString(refundTargetPaise),
+      totalRefunded: paiseToString(totalRefundedPaise),
+      remainingBalance: paiseToString(newRemainingPaise),
       voucher: {
         id: voucher.id,
         amount: voucher.amount,
         status: 'COMPLETED',
         reason: voucher.reason,
         allocations
-      }
+      },
+      allocations
     };
+
+    // Store in idempotency_keys if key provided
+    if (idempotencyKey) {
+      await client.query(
+        `INSERT INTO idempotency_keys (
+           company_id, user_id, key, request_path, request_params_hash,
+           response_status_code, response_body, status, expires_at
+         ) VALUES (
+           $1, $2, $3, '/api/v1/billing/invoices/refund', $4,
+           200, $5, 'COMPLETED', clock_timestamp() + INTERVAL '24 hours'
+         )`,
+        [companyId, userId, idempotencyKey, payloadHash, JSON.stringify(responseData)]
+      );
+    }
+
+    await client.query('COMMIT');
+    return responseData;
   } catch (err) {
     await client.query('ROLLBACK');
     throw err;

@@ -24,6 +24,7 @@ const TEST_COMPANY_INACTIVE = '33333333-3333-4333-8333-333333333333';
 const TEST_ROLE_ADMIN = '33333333-3333-4333-8333-333333333301';
 const TEST_ROLE_MANAGER = '33333333-3333-4333-8333-333333333302';
 const TEST_ROLE_CASHIER = '33333333-3333-4333-8333-333333333303';
+const TEST_ROLE_WAITER = '33333333-3333-4333-8333-333333333304';
 
 const HASHED_ADMIN_PASS = bcrypt.hashSync('AdminSecure2026!', 10);
 const HASHED_MANAGER_PASS = bcrypt.hashSync('ManagerSecure2026!', 10);
@@ -100,6 +101,50 @@ function createMockPool() {
       token_version: 1,
       company_id: TEST_COMPANY_INACTIVE,
       role_id: TEST_ROLE_CASHIER
+    },
+    {
+      id: '55555555-5555-4555-8555-555555555507',
+      username: 'multi_tenant_cashier',
+      password_hash: HASHED_CASHIER_PASS,
+      full_name: 'Company 1 Duplicate Cashier',
+      email: 'cashier1@cafecompany.internal',
+      is_active: true,
+      token_version: 1,
+      company_id: TEST_COMPANY_1,
+      role_id: TEST_ROLE_CASHIER
+    },
+    {
+      id: '55555555-5555-4555-8555-555555555508',
+      username: 'multi_tenant_cashier',
+      password_hash: HASHED_CASHIER_PASS,
+      full_name: 'Company 2 Duplicate Cashier',
+      email: 'cashier2@othercompany.internal',
+      is_active: true,
+      token_version: 1,
+      company_id: TEST_COMPANY_2,
+      role_id: TEST_ROLE_CASHIER
+    },
+    {
+      id: '55555555-5555-4555-8555-555555555509',
+      username: 'waiter1',
+      password_hash: HASHED_CASHIER_PASS,
+      full_name: 'Table Waiter',
+      email: 'waiter@cafecompany.internal',
+      is_active: true,
+      token_version: 1,
+      company_id: TEST_COMPANY_1,
+      role_id: TEST_ROLE_WAITER
+    },
+    {
+      id: '55555555-5555-4555-8555-555555555510',
+      username: 'special+user.test_123@cafe',
+      password_hash: HASHED_CASHIER_PASS,
+      full_name: 'Special Characters User',
+      email: 'special@cafecompany.internal',
+      is_active: true,
+      token_version: 1,
+      company_id: TEST_COMPANY_1,
+      role_id: TEST_ROLE_CASHIER
     }
   ];
 
@@ -108,18 +153,21 @@ function createMockPool() {
       id: TEST_COMPANY_1,
       legal_name: 'Cafe & Brownie Co Pvt Ltd',
       trade_name: 'Cafe Company & Brownie Shop',
+      gstin: '32AAAAA0000A1Z5',
       is_active: true
     },
     [TEST_COMPANY_2]: {
       id: TEST_COMPANY_2,
       legal_name: 'Competitor Retail Pvt Ltd',
       trade_name: 'Other Cafe',
+      gstin: '33BBBBB1111B2Z6',
       is_active: true
     },
     [TEST_COMPANY_INACTIVE]: {
       id: TEST_COMPANY_INACTIVE,
       legal_name: 'Inactive Defunct Cafe Pvt Ltd',
       trade_name: 'Defunct Cafe',
+      gstin: '32CCCCCC2222C3Z7',
       is_active: false
     }
   };
@@ -127,13 +175,15 @@ function createMockPool() {
   const roles = {
     [TEST_ROLE_ADMIN]: { id: TEST_ROLE_ADMIN, code: 'ADMIN', name: 'System Administrator' },
     [TEST_ROLE_MANAGER]: { id: TEST_ROLE_MANAGER, code: 'STORE_MANAGER', name: 'Store Manager' },
-    [TEST_ROLE_CASHIER]: { id: TEST_ROLE_CASHIER, code: 'CASHIER', name: 'Counter Cashier' }
+    [TEST_ROLE_CASHIER]: { id: TEST_ROLE_CASHIER, code: 'CASHIER', name: 'Counter Cashier' },
+    [TEST_ROLE_WAITER]: { id: TEST_ROLE_WAITER, code: 'WAITER', name: 'Service Waiter' }
   };
 
   const permissions = {
     [TEST_ROLE_ADMIN]: ['billing.create', 'billing.calculate', 'billing.void', 'reports.view'],
     [TEST_ROLE_MANAGER]: ['billing.create', 'billing.calculate', 'billing.void'],
-    [TEST_ROLE_CASHIER]: ['billing.create', 'billing.calculate']
+    [TEST_ROLE_CASHIER]: ['billing.create', 'billing.calculate'],
+    [TEST_ROLE_WAITER]: ['orders.create', 'tables.view']
   };
 
   const revokedTokens = new Map(); // tokenHash -> { expiresAt, reason }
@@ -151,14 +201,20 @@ function createMockPool() {
       // 1. Fetch user by username (Login query)
       if (lower.includes('from users u') && lower.includes('where u.username = $1')) {
         const username = params[0];
-        const user = users.find((u) => u.username === username);
-        if (!user) return { rows: [], rowCount: 0 };
+        const companyScope = params[1];
 
-        const company = companies[user.company_id];
-        const role = roles[user.role_id];
+        let matchingUsers = users.filter((u) => u.username === username);
+        if (companyScope) {
+          matchingUsers = matchingUsers.filter((u) => {
+            const comp = companies[u.company_id];
+            return u.company_id === companyScope || comp?.gstin === companyScope;
+          });
+        }
 
-        return {
-          rows: [{
+        const rows = matchingUsers.map((user) => {
+          const company = companies[user.company_id];
+          const role = roles[user.role_id];
+          return {
             id: user.id,
             username: user.username,
             password_hash: user.password_hash,
@@ -173,9 +229,10 @@ function createMockPool() {
             role_id: role?.id,
             role_code: role?.code,
             role_name: role?.name
-          }],
-          rowCount: 1
-        };
+          };
+        });
+
+        return { rows, rowCount: rows.length };
       }
 
       // 2. Fetch user by user_id (Authentication & /me query)
@@ -777,5 +834,132 @@ describe('Phase 3.2 — Authentication & Authorization Tests', () => {
       .post('/api/v1/auth/logout')
       .set('Authorization', `Bearer ${prodToken}`);
     assert.strictEqual(logoutRes.status, 200);
+  });
+
+  // 24. Ambiguous username across multiple companies fails closed
+  it('24. Ambiguous username across multiple companies fails closed with generic 401', async () => {
+    const res = await request(testApp)
+      .post('/api/v1/auth/login')
+      .send({ username: 'multi_tenant_cashier', password: 'CashierSecure2026!' });
+
+    assert.strictEqual(res.status, 401);
+    assert.strictEqual(res.body.success, false);
+    assert.strictEqual(res.body.error.code, 'INVALID_CREDENTIALS');
+    assert.strictEqual(res.body.error.message, 'Invalid username or password');
+  });
+
+  // 25. Targeted login with explicit companyId resolves correct company
+  it('25. Targeted login with explicit companyId resolves correct tenant user', async () => {
+    // Login to Company 1
+    const res1 = await request(testApp)
+      .post('/api/v1/auth/login')
+      .send({
+        username: 'multi_tenant_cashier',
+        password: 'CashierSecure2026!',
+        companyId: TEST_COMPANY_1
+      });
+
+    assert.strictEqual(res1.status, 200);
+    assert.strictEqual(res1.body.data.user.company.id, TEST_COMPANY_1);
+    assert.strictEqual(res1.body.data.user.id, '55555555-5555-4555-8555-555555555507');
+
+    // Login to Company 2
+    const res2 = await request(testApp)
+      .post('/api/v1/auth/login')
+      .send({
+        username: 'multi_tenant_cashier',
+        password: 'CashierSecure2026!',
+        companyId: TEST_COMPANY_2
+      });
+
+    assert.strictEqual(res2.status, 200);
+    assert.strictEqual(res2.body.data.user.company.id, TEST_COMPANY_2);
+    assert.strictEqual(res2.body.data.user.id, '55555555-5555-4555-8555-555555555508');
+  });
+
+  // 26. Targeted login with scoped username format (companyId/username)
+  it('26. Targeted login with scoped username format (companyId/username) resolves correct tenant user', async () => {
+    const res = await request(testApp)
+      .post('/api/v1/auth/login')
+      .send({
+        username: `${TEST_COMPANY_2}/multi_tenant_cashier`,
+        password: 'CashierSecure2026!'
+      });
+
+    assert.strictEqual(res.status, 200);
+    assert.strictEqual(res.body.data.user.company.id, TEST_COMPANY_2);
+    assert.strictEqual(res.body.data.user.username, 'multi_tenant_cashier');
+  });
+
+  // 27. Tenant custom role (WAITER) authenticates and receives tenant permissions
+  it('27. Tenant custom role (WAITER) authenticates successfully with tenant permissions', async () => {
+    const res = await request(testApp)
+      .post('/api/v1/auth/login')
+      .send({
+        username: 'waiter1',
+        password: 'CashierSecure2026!'
+      });
+
+    assert.strictEqual(res.status, 200);
+    assert.strictEqual(res.body.data.user.role.code, 'WAITER');
+    assert.deepStrictEqual(res.body.data.user.permissions, ['orders.create', 'tables.view']);
+  });
+
+  // 28. Targeted login with company GSTIN resolves correct tenant user
+  it('28. Targeted login with company GSTIN resolves correct tenant user', async () => {
+    const res = await request(testApp)
+      .post('/api/v1/auth/login')
+      .send({
+        username: '32AAAAA0000A1Z5/multi_tenant_cashier',
+        password: 'CashierSecure2026!'
+      });
+
+    assert.strictEqual(res.status, 200);
+    assert.strictEqual(res.body.data.user.company.id, TEST_COMPANY_1);
+    assert.strictEqual(res.body.data.user.id, '55555555-5555-4555-8555-555555555507');
+  });
+
+  // 29. Wrong company identifiers do not authenticate
+  it('29. Wrong company identifier fails to authenticate and returns generic 401', async () => {
+    const res = await request(testApp)
+      .post('/api/v1/auth/login')
+      .send({
+        username: 'multi_tenant_cashier',
+        password: 'CashierSecure2026!',
+        companyId: '99999999-9999-4999-8999-999999999999'
+      });
+
+    assert.strictEqual(res.status, 401);
+    assert.strictEqual(res.body.error.code, 'INVALID_CREDENTIALS');
+  });
+
+  // 30. Company identifiers do not grant authorization or elevate roles
+  it('30. Company identifiers do not grant authorization or elevate cashier role to admin', async () => {
+    const res = await request(testApp)
+      .post('/api/v1/auth/login')
+      .send({
+        username: 'multi_tenant_cashier',
+        password: 'CashierSecure2026!',
+        companyId: TEST_COMPANY_1
+      });
+
+    assert.strictEqual(res.status, 200);
+    assert.strictEqual(res.body.data.user.role.code, 'CASHIER');
+    assert.deepStrictEqual(res.body.data.user.permissions, ['billing.create', 'billing.calculate']);
+    assert.ok(!res.body.data.user.permissions.includes('reports.view'));
+  });
+
+  // 31. Usernames containing special characters are handled safely
+  it('31. Usernames containing special characters are handled safely without SQL errors', async () => {
+    const res = await request(testApp)
+      .post('/api/v1/auth/login')
+      .send({
+        username: 'special+user.test_123@cafe',
+        password: 'CashierSecure2026!'
+      });
+
+    assert.strictEqual(res.status, 200);
+    assert.strictEqual(res.body.data.user.username, 'special+user.test_123@cafe');
+    assert.strictEqual(res.body.data.user.company.id, TEST_COMPANY_1);
   });
 });

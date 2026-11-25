@@ -580,8 +580,9 @@ describe('Dashboard & Business Reports Integration Tests', () => {
       });
 
       assert.strictEqual(res.status, 200);
-      // Net sales for Brand CC today: 840.00
-      assert.strictEqual(Number(res.body.summary.netSales), 840.00);
+      // Net sales for Brand CC today after 210.00 refund: 840.00 - 210.00 = 630.00
+      assert.strictEqual(Number(res.body.summary.refunds), 210.00);
+      assert.strictEqual(Number(res.body.summary.netSales), 630.00);
     });
 
     it('3.3 Filtering by Brand BS returns only Brand BS lines and excludes CC lines', async () => {
@@ -608,8 +609,9 @@ describe('Dashboard & Business Reports Integration Tests', () => {
       // Total completed invoices: 3 (INV-1, INV-2-MIXED, INV-4-REFUND)
       // INV-3-VOID (1100.00) is excluded
       assert.strictEqual(res.body.summary.totalInvoices, 3);
-      // Total net sales: 420.00 + 564.00 + 210.00 = 1194.00
-      assert.strictEqual(Number(res.body.summary.netSales), 1194.00);
+      // Total invoiced: 420.00 + 564.00 + 210.00 = 1194.00, Completed Refunds: 210.00, Net sales: 984.00
+      assert.strictEqual(Number(res.body.summary.refunds), 210.00);
+      assert.strictEqual(Number(res.body.summary.netSales), 984.00);
     });
 
     it('4.2 Refund report documents completed refund separately without double counting', async () => {

@@ -822,10 +822,10 @@ describe('Phase 3.4 — Cashier PIN Authentication & Quick Switching Tests', () 
         const permCheck = await testClient.query("SELECT COUNT(*)::int AS count FROM permissions WHERE code = 'user:reset_pin';");
         assert.strictEqual(permCheck.rows[0].count, 0);
 
-        // Assert exactly 24 canonical permissions remain (Migration 012 + 013, excluding subsequent tax/table/kot/printer migrations)
-        const totalPerms = await testClient.query("SELECT COUNT(*)::int AS count FROM permissions WHERE code NOT LIKE 'tax:%' AND code NOT LIKE 'table:%' AND code NOT LIKE 'kot:%' AND code NOT LIKE 'printer%';");
-        assert.strictEqual(totalPerms.rows[0].count, 24);
-
+        // Assert 24 canonical permissions plus 7 preserved legacy permissions remain
+// (excluding subsequent tax/table/kot/printer migrations).
+const totalPerms = await testClient.query("SELECT COUNT(*)::int AS count FROM permissions WHERE code NOT LIKE 'tax:%' AND code NOT LIKE 'table:%' AND code NOT LIKE 'kot:%' AND code NOT LIKE 'printer%';");
+assert.strictEqual(totalPerms.rows[0].count, 31);
         // Assert lockout columns no longer exist
         const colCheck = await testClient.query(`
           SELECT COUNT(*)::int AS count

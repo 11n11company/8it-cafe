@@ -6,6 +6,7 @@
 
 const express = require('express');
 const billingService = require('../services/billing.service');
+const creditNoteService = require('../services/credit-note.service');
 const { createAuthMiddleware } = require('../middleware/authenticate');
 const { requirePermission, authorizeRoles } = require('../middleware/authorize');
 const { pool: defaultPool } = require('../config/database');
@@ -430,13 +431,14 @@ function createBillingRouter(dependencies = {}) {
     async (req, res, next) => {
       const timestamp = new Date().toISOString();
       const requestId = req.id || null;
+      const idempotencyKey = req.headers['x-idempotency-key'] || null;
 
       try {
         const companyId = req.tenant.companyId;
         const userId = req.user.id;
         const invoiceId = req.params.id;
 
-        const result = await billingService.refundInvoice(companyId, userId, invoiceId, req.body);
+        const result = await billingService.refundInvoice(companyId, userId, invoiceId, req.body, idempotencyKey);
 
         return res.status(200).json({
           success: true,
@@ -448,6 +450,117 @@ function createBillingRouter(dependencies = {}) {
           return res.status(err.statusCode).json({
             success: false,
             error: { code: err.code || 'REFUND_ERROR', message: err.message },
+            meta: { timestamp, requestId }
+          });
+        }
+        return next(err);
+      }
+    }
+  );
+
+  /**
+   * POST /api/v1/billing/invoices/:id/credit-note
+   * Issues statutory Indian GST Credit Note against an invoice.
+   */
+  router.post(
+    '/invoices/:id/credit-note',
+    authenticate,
+    requirePermission('order:cancel'),
+    authorizeRoles('ADMIN', 'STORE_MANAGER'),
+    async (req, res, next) => {
+      const timestamp = new Date().toISOString();
+      const requestId = req.id || null;
+      const idempotencyKey = req.headers['x-idempotency-key'] || null;
+
+      try {
+        const companyId = req.tenant.companyId;
+        const userId = req.user.id;
+        const invoiceId = req.params.id;
+
+        const result = await creditNoteService.issueCreditNote(companyId, userId, invoiceId, req.body, idempotencyKey);
+
+        return res.status(201).json({
+          success: true,
+          data: result.creditNote,
+          meta: { timestamp, requestId }
+        });
+      } catch (err) {
+        if (err.statusCode) {
+          return res.status(err.statusCode).json({
+            success: false,
+            error: { code: err.code || 'CREDIT_NOTE_ERROR', message: err.message },
+            meta: { timestamp, requestId }
+          });
+        }
+        return next(err);
+      }
+    }
+  );
+
+  /**
+   * GET /api/v1/billing/invoices/:id/credit-notes
+   * Lists all credit notes issued against a specific invoice.
+   */
+  router.get(
+    '/invoices/:id/credit-notes',
+    authenticate,
+    authorizeRoles('ADMIN', 'STORE_MANAGER'),
+    async (req, res, next) => {
+      const timestamp = new Date().toISOString();
+      const requestId = req.id || null;
+
+      try {
+        const companyId = req.tenant.companyId;
+        const invoiceId = req.params.id;
+
+        const list = await creditNoteService.getCreditNotesForInvoice(companyId, invoiceId);
+
+        return res.status(200).json({
+          success: true,
+          data: list,
+          meta: { timestamp, requestId }
+        });
+      } catch (err) {
+        if (err.statusCode) {
+          return res.status(err.statusCode).json({
+            success: false,
+            error: { code: err.code || 'CREDIT_NOTE_ERROR', message: err.message },
+            meta: { timestamp, requestId }
+          });
+        }
+        return next(err);
+      }
+    }
+  );
+
+  /**
+   * GET /api/v1/billing/credit-notes/:id
+   * Fetches single credit note by ID.
+   */
+  router.get(
+    '/credit-notes/:id',
+    authenticate,
+    authorizeRoles('ADMIN', 'STORE_MANAGER'),
+    async (req, res, next) => {
+      const timestamp = new Date().toISOString();
+      const requestId = req.id || null;
+
+      try {
+        const companyId = req.tenant.companyId;
+        const creditNoteId = req.params.id;
+
+        const creditNote = await creditNoteService.getCreditNoteById(companyId, creditNoteId);
+
+        return res.status(200).json({
+          success: true,
+          data: creditNote,
+          meta: { timestamp, requestId }
+        });
+      } catch (err) {
+        if (err.statusCode) {
+          return res.status(err.statusCode).json({
+            success: false,
+            error: { code: err.code || 'CREDIT_NOTE_ERROR', message: err.message },
             meta: { timestamp, requestId }
           });
         }

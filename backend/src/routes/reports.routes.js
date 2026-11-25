@@ -274,6 +274,7 @@ function createReportsRouter() {
           summary: result.summary,
           rateSlabs: result.rateSlabs,
           placeOfSupplyBreakdown: result.placeOfSupplyBreakdown,
+          creditNotes: result.creditNotes,
           period: result.period,
           meta: { timestamp, requestId, ...result.meta }
         });
