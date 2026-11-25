@@ -533,22 +533,11 @@ export function AdminDashboard({ onOpenSwitchCashier }) {
       {/* 2. MAIN NAVIGATION SIDEBAR (Collapsible & Grouped) */}
       <aside className={`saas-sidebar ${!sidebarOpen ? 'collapsed' : ''}`}>
         <div className="saas-sidebar-brand">
-          <div className="saas-sidebar-brand-left">
-            <div className="saas-sidebar-logo">8it</div>
-            <div>
-              <div className="saas-sidebar-brand-name">8it Cafe</div>
-              <div className="saas-sidebar-brand-sub">{isAdmin ? 'Administration' : 'Store management'}</div>
-            </div>
+          <div className="saas-sidebar-logo">8it</div>
+          <div>
+            <div className="saas-sidebar-brand-name">8it Cafe</div>
+            <div className="saas-sidebar-brand-sub">{isAdmin ? 'Administration' : 'Store management'}</div>
           </div>
-          <button
-            type="button"
-            className="saas-sidebar-toggle-btn"
-            onClick={() => setSidebarOpen(false)}
-            title="Collapse Sidebar"
-            aria-label="Collapse Sidebar"
-          >
-            <PanelLeftClose className="ui-icon" aria-hidden="true" />
-          </button>
         </div>
         {/* Brand Outlet Header Selector */}
         <div className="saas-brand-selector">
@@ -740,10 +729,10 @@ export function AdminDashboard({ onOpenSwitchCashier }) {
                 type="button"
                 className="hero-glass-btn saas-toggle-menu-btn"
                 onClick={() => setSidebarOpen((prev) => !prev)}
-                title={sidebarOpen ? "Collapse Sidebar" : "Open Sidebar"}
+                title={sidebarOpen ? "Close Sidebar" : "Open Sidebar"}
                 aria-label="Toggle Sidebar Navigation"
               >
-                {sidebarOpen ? <PanelLeftClose className="ui-icon" aria-hidden="true" /> : <Menu className="ui-icon" aria-hidden="true" />}
+                <Menu className="ui-icon" aria-hidden="true" />
               </button>
             </div>
             <div className="saas-hero__center">
@@ -782,10 +771,10 @@ export function AdminDashboard({ onOpenSwitchCashier }) {
               type="button"
               className="saas-header-menu-btn"
               onClick={() => setSidebarOpen((prev) => !prev)}
-              title={sidebarOpen ? "Collapse Sidebar" : "Open Sidebar"}
+              title={sidebarOpen ? "Close Sidebar" : "Open Sidebar"}
               aria-label="Toggle Sidebar Navigation"
             >
-              {sidebarOpen ? <PanelLeftClose className="ui-icon" aria-hidden="true" /> : <Menu className="ui-icon" aria-hidden="true" />}
+              <Menu className="ui-icon" aria-hidden="true" />
             </button>
             <div>
               <h1 className="saas-header-title">{(PAGE_META[activeTab] || PAGE_META.dashboard).title}</h1>
