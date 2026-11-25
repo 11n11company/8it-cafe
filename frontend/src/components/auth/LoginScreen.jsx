@@ -100,7 +100,6 @@ export function LoginScreen() {
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [staySignedIn, setStaySignedIn] = useState(true);
-  const [showForgotNotice, setShowForgotNotice] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
 
@@ -163,13 +162,6 @@ export function LoginScreen() {
               <line x1="12" y1="16" x2="12.01" y2="16" />
             </svg>
             <span>{error}</span>
-          </div>
-        )}
-
-        {/* Forgot Password Notice */}
-        {showForgotNotice && (
-          <div className="cafe-forgot-notice">
-            <span>Account credentials and PINs are managed directly by your Store Administrator. Please contact your manager or administrator to reset your credentials.</span>
           </div>
         )}
 
@@ -274,7 +266,7 @@ export function LoginScreen() {
             </div>
           </div>
 
-          {/* Stay Signed In Checkbox & Forgot Password Link */}
+          {/* Stay Signed In Checkbox */}
           <div className="cafe-login-options">
             <label className="cafe-checkbox-label">
               <input
@@ -285,14 +277,6 @@ export function LoginScreen() {
               />
               <span>Stay signed in</span>
             </label>
-
-            <button
-              type="button"
-              className="cafe-forgot-link"
-              onClick={() => setShowForgotNotice(!showForgotNotice)}
-            >
-              Forget password?
-            </button>
           </div>
 
           {/* Primary Sign In Button */}
