@@ -25,16 +25,24 @@ function mapUserRowToDto(row) {
   return {
     id: row.id,
     companyId: row.company_id,
+    company_id: row.company_id,
     roleId: row.role_id,
+    role_id: row.role_id,
     roleCode: row.role_code || undefined,
+    role_code: row.role_code || undefined,
     roleName: row.role_name || undefined,
+    role_name: row.role_name || undefined,
     username: row.username,
     fullName: row.full_name,
+    full_name: row.full_name,
     phone: row.phone || null,
     email: row.email || null,
     isActive: row.is_active,
+    is_active: row.is_active,
     createdAt: row.created_at,
-    updatedAt: row.updated_at
+    created_at: row.created_at,
+    updatedAt: row.updated_at,
+    updated_at: row.updated_at
   };
 }
 

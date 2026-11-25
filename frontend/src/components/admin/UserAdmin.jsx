@@ -83,9 +83,14 @@ export function UserAdmin() {
       alert('Full name, username, and password are required');
       return;
     }
+    const targetRoleId = createForm.role_id || roles.find(r => r.code === 'CASHIER')?.id || roles[0]?.id;
+    if (!targetRoleId) {
+      alert('Please select an assigned role for the staff member.');
+      return;
+    }
     setSubmitting(true);
     try {
-      await api.users.create(createForm);
+      await api.users.create({ ...createForm, role_id: targetRoleId });
       setCreateModalOpen(false);
       loadData();
     } catch (err) {
@@ -99,7 +104,7 @@ export function UserAdmin() {
   const handleOpenEdit = (u) => {
     setEditingUser(u);
     setEditForm({
-      full_name: u.full_name || '',
+      full_name: u.fullName || u.full_name || '',
       email: u.email || '',
       phone: u.phone || ''
     });
@@ -122,11 +127,16 @@ export function UserAdmin() {
   // CHANGE ROLE
   const handleOpenRole = (u) => {
     setSelectedRoleUser(u);
-    setNewRoleId(u.role_id || '');
+    const initialRoleId = u.roleId || u.role_id || u.role?.id || roles[0]?.id || '';
+    setNewRoleId(initialRoleId);
     setRoleModalOpen(true);
   };
 
   const handleSaveRole = async () => {
+    if (!newRoleId) {
+      alert('Please select a valid role');
+      return;
+    }
     setSubmitting(true);
     try {
       await api.users.updateRole(selectedRoleUser.id, newRoleId);
@@ -233,11 +243,13 @@ export function UserAdmin() {
             {loading ? (
               <tr><td colSpan="6" style={{ textAlign: 'center', padding: '24px', color: 'var(--color-text-muted)' }}>Loading staff users...</td></tr>
             ) : users.map((u) => {
-              const roleCode = u.role_code || u.role?.code || 'CASHIER';
+              const roleCode = u.roleCode || u.role_code || u.role?.code || 'CASHIER';
+              const fullName = u.fullName || u.full_name || u.username;
+              const isActive = u.isActive !== undefined ? Boolean(u.isActive) : Boolean(u.is_active);
               return (
                 <tr key={u.id}>
                   <td className="font-bold">
-                    {u.full_name}
+                    {fullName}
                     {u.id === currentUser?.id && (
                       <span style={{ fontSize: '0.7rem', color: 'var(--primary)', marginLeft: '6px' }}>(You)</span>
                     )}
@@ -247,7 +259,7 @@ export function UserAdmin() {
                   <td className="text-sm text-secondary">
                     {u.phone || '—'} {u.email ? `• ${u.email}` : ''}
                   </td>
-                  <td><Badge status={(u.isActive !== undefined ? u.isActive : u.is_active) ? 'ACTIVE' : 'INACTIVE'} /></td>
+                  <td><Badge status={isActive ? 'ACTIVE' : 'INACTIVE'} /></td>
                   <td style={{ textAlign: 'right' }}>
                     <div style={{ display: 'inline-flex', gap: '6px', flexWrap: 'wrap', justifyContent: 'flex-end' }}>
                       <Button variant="outline" size="sm" onClick={() => handleOpenEdit(u)}>
@@ -266,11 +278,11 @@ export function UserAdmin() {
                       )}
                       {u.id !== currentUser?.id && (
                         <Button
-                          variant={(u.isActive !== undefined ? u.isActive : u.is_active) ? 'danger' : 'success'}
+                          variant={isActive ? 'danger' : 'success'}
                           size="sm"
                           onClick={() => handleToggleStatus(u)}
                         >
-                          {(u.isActive !== undefined ? u.isActive : u.is_active) ? 'Disable' : 'Enable'}
+                          {isActive ? 'Disable' : 'Enable'}
                         </Button>
                       )}
                     </div>

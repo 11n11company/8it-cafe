@@ -27,7 +27,11 @@ export function CashierSwitchModal({ isOpen, onClose }) {
         .then((res) => {
           const list = (res && res.data) ? res.data : [];
           // Filter to active CASHIER users
-          const eligible = list.filter(u => u.is_active && (u.role_code === 'CASHIER' || u.role?.code === 'CASHIER'));
+          const eligible = list.filter(u => {
+            const active = u.isActive !== undefined ? u.isActive : u.is_active;
+            const code = u.roleCode || u.role_code || u.role?.code;
+            return Boolean(active) && code === 'CASHIER';
+          });
           setCashiers(eligible);
         })
         .catch((err) => {
@@ -134,7 +138,7 @@ export function CashierSwitchModal({ isOpen, onClose }) {
                   >
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                       <span style={{ fontWeight: 700, fontSize: '0.92rem', color: 'var(--text-primary)' }}>
-                        {c.full_name || c.username}
+                        {c.fullName || c.full_name || c.username}
                       </span>
                       {isCurrent && (
                         <span style={{ fontSize: '0.65rem', background: 'var(--primary)', color: 'var(--color-on-primary)', padding: '2px 6px', borderRadius: '4px', fontWeight: 700 }}>
@@ -158,7 +162,7 @@ export function CashierSwitchModal({ isOpen, onClose }) {
             <div style={{ textAlign: 'center' }}>
               <span style={{ fontSize: '0.85rem', color: 'var(--color-text-muted)' }}>Switching to</span>
               <h4 style={{ fontSize: '1.2rem', color: 'var(--color-heading)' }}>
-                {selectedCashier.full_name || selectedCashier.username}
+                {selectedCashier.fullName || selectedCashier.full_name || selectedCashier.username}
               </h4>
             </div>
 

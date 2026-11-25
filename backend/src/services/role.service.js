@@ -30,12 +30,15 @@ async function listRoles(companyId, dbPool = pool) {
   return result.rows.map(row => ({
     id: row.id,
     companyId: row.company_id,
+    company_id: row.company_id,
     code: row.code,
     name: row.name,
     description: row.description,
     isSystem: row.is_system,
+    is_system: row.is_system,
     permissions: Array.isArray(row.permissions) ? row.permissions : [],
-    createdAt: row.created_at
+    createdAt: row.created_at,
+    created_at: row.created_at
   }));
 }
 
