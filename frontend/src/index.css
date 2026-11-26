@@ -1572,62 +1572,296 @@ h1, h2, h3, h4 {
 }
 
 /* ==========================================================================
-   Print Receipt Layout (@media print)
+   Thermal Receipt System (Screen Preview & 80mm POS Thermal Printer)
    ========================================================================== */
-.receipt-print-container {
-  display: none;
+.receipt-screen-wrapper {
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+  background-color: #f1f5f9;
+  padding: 16px;
+  border-radius: 8px;
+  overflow-y: auto;
+  max-height: 72vh;
+}
+
+.receipt-thermal-paper {
+  width: 100%;
+  max-width: 320px;
+  background-color: #ffffff;
+  color: #000000;
+  padding: 16px 14px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+  border: 1px solid #cbd5e1;
+  font-family: 'Courier New', Courier, 'Lucida Console', Monaco, monospace;
+  font-size: 11.5px;
+  line-height: 1.35;
+  box-sizing: border-box;
+}
+
+.receipt-header {
+  text-align: center;
+}
+
+.receipt-logo-wrap {
+  display: flex;
+  justify-content: center;
+  margin-bottom: 6px;
+}
+
+.receipt-logo-img {
+  width: 44px;
+  height: 44px;
+  object-fit: contain;
+  border-radius: 6px;
+}
+
+.receipt-brand-title {
+  font-size: 14.5px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+  margin-bottom: 2px;
+}
+
+.receipt-legal-name {
+  font-size: 10px;
+  color: #475569;
+  margin-bottom: 3px;
+}
+
+.receipt-address {
+  font-size: 10.5px;
+  line-height: 1.3;
+  color: #1e293b;
+  margin-bottom: 2px;
+}
+
+.receipt-gstin {
+  font-size: 11px;
+  font-weight: 700;
+  margin-top: 2px;
+}
+
+.receipt-doc-title {
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 1.5px;
+  text-align: center;
+  margin: 3px 0;
+}
+
+.receipt-reprint-badge {
+  font-size: 10.5px;
+  font-weight: 700;
+  text-align: center;
+  margin: 2px 0;
+}
+
+.receipt-divider {
+  border-top: 1px dashed #000000;
+  margin: 6px 0;
+  height: 0;
+}
+
+.receipt-meta-grid {
+  font-size: 11px;
+  margin: 4px 0;
+}
+
+.receipt-meta-row {
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 2px;
+}
+
+.receipt-meta-customer {
+  font-size: 11.5px;
+  font-weight: 700;
+  margin-top: 4px;
+}
+
+.receipt-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 11px;
+  margin: 4px 0;
+  table-layout: fixed;
+}
+
+.receipt-table thead tr {
+  border-top: 1px dashed #000000;
+  border-bottom: 1px dashed #000000;
+}
+
+.receipt-table th {
+  padding: 4px 0;
+  font-weight: 700;
+  text-align: left;
+}
+
+.receipt-table td {
+  padding: 3px 0;
+  vertical-align: top;
+}
+
+.receipt-table .col-item {
+  width: 44%;
+  text-align: left;
+  word-break: break-word;
+  overflow-wrap: break-word;
+}
+
+.receipt-table .col-qty {
+  width: 14%;
+  text-align: right;
+  white-space: nowrap;
+}
+
+.receipt-table .col-rate {
+  width: 20%;
+  text-align: right;
+  white-space: nowrap;
+}
+
+.receipt-table .col-amt {
+  width: 22%;
+  text-align: right;
+  white-space: nowrap;
+  font-weight: 700;
+}
+
+.receipt-item-name {
+  word-break: break-word;
+}
+
+.receipt-item-variant {
+  font-size: 9.5px;
+  color: #475569;
+}
+
+.receipt-totals {
+  font-size: 11px;
+  margin: 4px 0;
+}
+
+.receipt-totals-row {
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 2.5px;
+}
+
+.receipt-grand-total {
+  display: flex;
+  justify-content: space-between;
+  font-size: 14px;
+  font-weight: 700;
+  border-top: 1px solid #000000;
+  border-bottom: 1px solid #000000;
+  padding: 5px 0;
+  margin: 6px 0;
+}
+
+.receipt-payments {
+  font-size: 11px;
+  margin: 4px 0;
+}
+
+.receipt-payments-header {
+  font-weight: 700;
+  margin-bottom: 3px;
+}
+
+.receipt-change-row {
+  font-weight: 700;
+}
+
+.receipt-footer {
+  text-align: center;
+  font-size: 10.5px;
+  line-height: 1.35;
+  margin-top: 6px;
+}
+
+.receipt-fssai {
+  font-size: 10px;
+  margin-bottom: 2px;
+}
+
+.receipt-footer-thanks {
+  font-weight: 700;
+}
+
+.receipt-footer-msg {
+  color: #475569;
+  margin-top: 1px;
+}
+
+/* ==========================================================================
+   Print Receipt Layout (@media print) - 80mm POS Thermal Printer
+   ========================================================================== */
+@page {
+  size: 80mm auto;
+  margin: 0;
 }
 
 @media print {
+  html, body {
+    width: 80mm !important;
+    min-width: 80mm !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    background: #ffffff !important;
+    color: #000000 !important;
+  }
+
   body * {
-    visibility: hidden;
+    visibility: hidden !important;
   }
-  .receipt-print-container, .receipt-print-container * {
-    visibility: visible;
+
+  .receipt-print-container,
+  .receipt-print-container * {
+    visibility: visible !important;
   }
+
   .receipt-print-container {
     display: block !important;
-    position: absolute;
-    left: 0;
-    top: 0;
-    width: 80mm;
-    padding: 10px;
-    font-family: 'Courier New', Courier, monospace;
-    font-size: 12px;
-    color: #000;
-    background: var(--color-surface);
-    line-height: 1.3;
+    position: absolute !important;
+    left: 0 !important;
+    top: 0 !important;
+    width: 80mm !important;
+    max-width: 80mm !important;
+    box-sizing: border-box !important;
+    margin: 0 !important;
+    padding: 2mm 3mm !important;
+    background: #ffffff !important;
+    color: #000000 !important;
+    font-family: 'Courier New', Courier, 'Lucida Console', Monaco, monospace !important;
+    font-size: 11px !important;
+    line-height: 1.3 !important;
+    box-shadow: none !important;
+    border: none !important;
   }
-  .receipt-header {
-    text-align: center;
-    border-bottom: 1px dashed #000;
-    padding-bottom: 8px;
-    margin-bottom: 8px;
+
+  .receipt-logo-img {
+    filter: grayscale(100%) contrast(150%) !important;
   }
-  .receipt-title {
-    font-size: 16px;
-    font-weight: bold;
+
+  .receipt-legal-name,
+  .receipt-address,
+  .receipt-item-variant,
+  .receipt-footer-msg {
+    color: #000000 !important;
   }
-  .receipt-table {
-    width: 100%;
-    border-collapse: collapse;
-    margin: 8px 0;
-  }
-  .receipt-table th, .receipt-table td {
-    padding: 3px 0;
-    text-align: left;
-  }
-  .receipt-table .text-right {
-    text-align: right;
-  }
-  .receipt-divider {
-    border-top: 1px dashed #000;
-    margin: 6px 0;
-  }
+
+  .receipt-header,
+  .receipt-meta-grid,
+  .receipt-table,
+  .receipt-totals,
+  .receipt-payments,
   .receipt-footer {
-    text-align: center;
-    margin-top: 10px;
-    font-size: 11px;
+    break-inside: avoid !important;
+    page-break-inside: avoid !important;
   }
 }
 

@@ -80,25 +80,72 @@ export function ReceiptModal({ isOpen, onClose, invoice, company }) {
     }
   };
 
+  // Date and Time formatting
+  const invoiceDate = invoice.created_at ? new Date(invoice.created_at) : new Date();
+  const formattedDate = invoiceDate.toLocaleDateString('en-IN', {
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric'
+  });
+  const formattedTime = invoiceDate.toLocaleTimeString('en-IN', {
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: true
+  });
+
+  // Order type label
+  const orderTypeRaw = String(invoice.order_type || '').toUpperCase();
+  const orderTypeLabel = orderTypeRaw === 'DINE_IN' ? 'Dine In' : (orderTypeRaw === 'TAKEAWAY' ? 'Takeaway' : 'Parcel');
+  const isDineIn = orderTypeRaw === 'DINE_IN';
+
+  // Financial values from existing invoice data
+  const taxableSubtotal = Number(
+    invoice.total_taxable_amount ||
+    invoice.totalTaxableAmount ||
+    invoice.subtotal_taxable ||
+    itemsTaxableTotal ||
+    invoice.subtotal_gross ||
+    0
+  );
+  const discountAmount = Number(invoice.discount_amount || invoice.total_discount_amount || invoice.discount || 0);
+  const cgstAmount = Number(invoice.total_cgst_amount || invoice.cgst_amount || 0);
+  const sgstAmount = Number(invoice.total_sgst_amount || invoice.sgst_amount || 0);
+  const igstAmount = Number(invoice.total_igst_amount || invoice.igst_amount || 0);
+  const cessAmount = Number(invoice.total_cess_amount || invoice.cess_amount || 0);
+  const roundAdj = Number(invoice.rounding_adjustment || 0);
+  const grandTotal = Number(invoice.grand_total || 0);
+
+  // Payments and change
+  const changeReturned = Number(
+    invoice.change_amount ||
+    payments.find((p) => Number(p.change_returned || 0) > 0)?.change_returned ||
+    0
+  );
+  const totalPaid = payments.length > 0
+    ? payments.reduce((sum, p) => sum + Number(p.amount || 0), 0)
+    : grandTotal;
+
+  const logoSrc = company?.logo_url || '/icons/icon.svg';
+
   return (
     <Modal
       isOpen={isOpen}
       onClose={onClose}
       title="Tax Invoice & Customer Bill"
-      maxWidth="500px"
+      maxWidth="480px"
       footer={
         <div style={{ display: 'flex', gap: '10px', width: '100%' }}>
           <Button
             variant="primary"
             onClick={handlePrint}
-            style={{ flex: 1, minHeight: '48px' }}
+            style={{ flex: 1, minHeight: '46px' }}
           >
             Print Receipt
           </Button>
           <Button
             variant="outline"
             onClick={handleRetryPrint}
-            style={{ flex: 1, minHeight: '48px' }}
+            style={{ flex: 1, minHeight: '46px' }}
             title="Retry thermal bill printing without affecting payment state"
           >
             Retry Print
@@ -112,287 +159,198 @@ export function ReceiptModal({ isOpen, onClose, invoice, company }) {
         {kotMessage && <Alert type="success" message={kotMessage} />}
         {kotError && <Alert type="warning" message={kotError} />}
 
-        {/* 80mm Thermal Receipt On-Screen Representation */}
-        <div
-          style={{
-            backgroundColor: 'var(--color-surface)',
-            color: 'var(--color-text)',
-            padding: '24px 20px',
-            borderRadius: '8px',
-            fontFamily: 'Courier New, Courier, monospace',
-            fontSize: '13px',
-            lineHeight: '1.45',
-            boxShadow: '0 4px 12px rgba(0,0,0,0.15)',
-            border: '1px solid var(--color-border)'
-          }}
-        >
-          {/* Header */}
-          <div style={{ textAlign: 'center', borderBottom: '1px dashed var(--color-border-strong)', paddingBottom: '10px', marginBottom: '10px' }}>
-            <div style={{ fontSize: '18px', fontWeight: 'bold', letterSpacing: '0.5px' }}>
-              8itcafe & Seri's hub
-            </div>
-            {company?.legal_name && company?.legal_name !== "8itcafe & Seri's hub" && (
-              <div style={{ fontSize: '11px', color: 'var(--color-text-muted)', marginTop: '2px' }}>
-                ({company.legal_name})
-              </div>
-            )}
-            <div style={{ fontSize: '11px', marginTop: '4px' }}>
-              {company?.address_line1 || 'Shop 12, Main Street'}, {company?.city || 'Bengaluru'} - {company?.pincode || '560001'}
-            </div>
-            <div style={{ fontSize: '11px', fontWeight: 'bold', marginTop: '2px' }}>
-              GSTIN: {company?.gstin || '29AAAAA0000A1Z5'}
-            </div>
-            <div style={{ fontSize: '13px', fontWeight: 'bold', marginTop: '6px', letterSpacing: '1px' }}>
-              {isReprint ? 'TAX INVOICE (DUPLICATE / REPRINT)' : 'TAX INVOICE'}
-            </div>
-            {isReprint && (
-              <div style={{ fontSize: '11px', fontWeight: 'bold', color: 'var(--color-warning)', marginTop: '2px' }}>
-                *** DUPLICATE REPRINT ***
-              </div>
-            )}
-          </div>
-
-          {/* Invoice Meta */}
-          <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px', marginBottom: '4px' }}>
-            <span>Invoice: <strong>{invoice.invoice_number}</strong></span>
-            <span>
-              {new Date(invoice.created_at || Date.now()).toLocaleDateString('en-IN', {
-                day: '2-digit',
-                month: 'short',
-                year: 'numeric'
-              })}
-            </span>
-          </div>
-
-          {/* Order Type & Reference */}
-          <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px', marginBottom: '4px' }}>
-            <span>Type: <strong>{invoice.order_type === 'DINE_IN' ? 'DINE-IN' : 'PARCEL / TAKEAWAY'}</strong></span>
-            {invoice.order_type === 'DINE_IN' ? (
-              <span>Table: <strong>{invoice.table_number_snapshot || 'Dine-In'}</strong></span>
-            ) : (
-              <span>Parcel Ref: <strong>{invoice.parcel_order_number || invoice.invoice_number}</strong></span>
-            )}
-          </div>
-
-          <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px', borderBottom: '1px dashed var(--color-border-strong)', paddingBottom: '8px', marginBottom: '10px' }}>
-            <span>Cashier: {invoice.cashier_name_snapshot || invoice.created_by_name || 'Staff'}</span>
-            <span>
-              {new Date(invoice.created_at || Date.now()).toLocaleTimeString('en-IN', {
-                hour: '2-digit',
-                minute: '2-digit'
-              })}
-            </span>
-          </div>
-
-          {customerName && (
-            <div style={{ fontSize: '12px', fontWeight: 'bold', borderBottom: '1px dashed var(--color-border-strong)', paddingBottom: '8px', marginBottom: '10px' }}>
-              CUSTOMER: {customerName}
-            </div>
-          )}
-
-          {/* Line Items Table */}
-          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px', marginBottom: '8px' }}>
-            <thead>
-              <tr style={{ borderBottom: '1px dashed var(--color-border-strong)' }}>
-                <th style={{ textAlign: 'left', paddingBottom: '4px' }}>Item</th>
-                <th style={{ textAlign: 'center', width: '35px', paddingBottom: '4px' }}>Qty</th>
-                <th style={{ textAlign: 'right', width: '55px', paddingBottom: '4px' }}>Price</th>
-                <th style={{ textAlign: 'right', width: '65px', paddingBottom: '4px' }}>Total</th>
-              </tr>
-            </thead>
-            <tbody>
-              {items.map((it, idx) => (
-                <tr key={idx} style={{ verticalAlign: 'top' }}>
-                  <td style={{ paddingTop: '4px' }}>
-                    <div>{it.product_name_snapshot || it.name}</div>
-                    <div style={{ fontSize: '10px', color: 'var(--color-text-muted)' }}>
-                      {it.brand_name_snapshot || ''} {it.is_kitchen_item_snapshot ? '• [Kitchen]' : ''}
-                    </div>
-                  </td>
-                  <td style={{ textAlign: 'center', paddingTop: '4px' }}>{it.quantity}</td>
-                  <td style={{ textAlign: 'right', paddingTop: '4px' }}>
-                    ₹{Number(it.unit_price_snapshot || it.unit_price || 0).toFixed(2)}
-                  </td>
-                  <td style={{ textAlign: 'right', paddingTop: '4px', fontWeight: 'bold' }}>
-                    ₹{Number(it.line_total || (Number(it.unit_price_snapshot || it.unit_price || 0) * it.quantity)).toFixed(2)}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-
-          {/* Taxes & Financial Totals */}
-          <div style={{ borderTop: '1px dashed var(--color-border-strong)', paddingTop: '8px', fontSize: '11px' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '3px' }}>
-              <span>Taxable Subtotal:</span>
-              <span>₹{Number(invoice.total_taxable_amount || invoice.totalTaxableAmount || invoice.subtotal_taxable || itemsTaxableTotal || invoice.subtotal_gross || 0).toFixed(2)}</span>
-            </div>
-
-            {Number(invoice.total_cgst_amount || invoice.cgst_amount || 0) > 0 && (
-              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '3px' }}>
-                <span>CGST:</span>
-                <span>₹{Number(invoice.total_cgst_amount || invoice.cgst_amount).toFixed(2)}</span>
-              </div>
-            )}
-
-            {Number(invoice.total_sgst_amount || invoice.sgst_amount || 0) > 0 && (
-              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '3px' }}>
-                <span>SGST:</span>
-                <span>₹{Number(invoice.total_sgst_amount || invoice.sgst_amount).toFixed(2)}</span>
-              </div>
-            )}
-
-            {Number(invoice.total_igst_amount || invoice.igst_amount || 0) > 0 && (
-              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '3px' }}>
-                <span>IGST:</span>
-                <span>₹{Number(invoice.total_igst_amount || invoice.igst_amount).toFixed(2)}</span>
-              </div>
-            )}
-
-            {Number(invoice.total_cess_amount || invoice.cess_amount || 0) > 0 && (
-              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '3px' }}>
-                <span>GST Cess:</span>
-                <span>₹{Number(invoice.total_cess_amount || invoice.cess_amount).toFixed(2)}</span>
-              </div>
-            )}
-
-            {Number(invoice.rounding_adjustment || 0) !== 0 && (
-              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '3px' }}>
-                <span>Rounding Adjustment:</span>
-                <span>{Number(invoice.rounding_adjustment) > 0 ? '+' : ''}₹{Number(invoice.rounding_adjustment).toFixed(2)}</span>
-              </div>
-            )}
-
-            <div
-              style={{
-                display: 'flex',
-                justifyContent: 'space-between',
-                fontSize: '15px',
-                fontWeight: 'bold',
-                borderTop: '1px solid var(--color-border-strong)',
-                borderBottom: '1px solid var(--color-border-strong)',
-                padding: '6px 0',
-                margin: '6px 0'
-              }}
-            >
-              <span>GRAND TOTAL:</span>
-              <span>₹{Number(invoice.grand_total || 0).toFixed(2)}</span>
-            </div>
-          </div>
-
-          {/* Payment Details */}
-          <div style={{ fontSize: '11px', marginTop: '6px', borderBottom: '1px dashed var(--color-border-strong)', paddingBottom: '6px' }}>
-            <div style={{ fontWeight: 'bold', marginBottom: '2px' }}>Payment Mode(s):</div>
-            {payments.length === 0 ? (
-              <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                <span>PAID IN FULL:</span>
-                <span style={{ fontWeight: 'bold' }}>₹{Number(invoice.grand_total || 0).toFixed(2)}</span>
-              </div>
-            ) : (
-              payments.map((p, idx) => (
-                <div key={idx} style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '2px' }}>
-                  <span>{p.payment_method} {p.transaction_reference ? `(${p.transaction_reference})` : ''}:</span>
-                  <span>₹{Number(p.amount || 0).toFixed(2)}</span>
+        {/* Screen Wrapper centering the 80mm preview */}
+        <div className="receipt-screen-wrapper">
+          {/* Unified 80mm Thermal Receipt Structure (used for both on-screen & print) */}
+          <div className="receipt-thermal-paper receipt-print-container">
+            {/* Header */}
+            <div className="receipt-header">
+              {logoSrc && (
+                <div className="receipt-logo-wrap">
+                  <img src={logoSrc} alt="8it Cafe" className="receipt-logo-img" />
                 </div>
-              ))
-            )}
-
-            {payments.some(p => Number(p.change_returned || 0) > 0) && (
-              <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 'bold', marginTop: '3px' }}>
-                <span>Change Returned:</span>
-                <span>₹{Number(payments.find(p => Number(p.change_returned || 0) > 0)?.change_returned || 0).toFixed(2)}</span>
+              )}
+              <div className="receipt-brand-title">8itcafe & Seri's hub</div>
+              {company?.legal_name && company?.legal_name !== "8itcafe & Seri's hub" && (
+                <div className="receipt-legal-name">({company.legal_name})</div>
+              )}
+              <div className="receipt-address">
+                {company?.address_line1 || 'Main Street Promenade'}{company?.address_line2 ? `, ${company.address_line2}` : ''}
+                <div>{company?.city || 'Kozhikode'}{company?.state_name ? `, ${company.state_name}` : ''} - {company?.pincode || '673001'}</div>
+                {company?.phone && <div>Ph: {company.phone}</div>}
               </div>
-            )}
+              <div className="receipt-gstin">
+                GSTIN: {company?.gstin || '32AAACA0000A1Z5'}
+              </div>
+
+              <div className="receipt-divider" />
+              <div className="receipt-doc-title">
+                {isReprint ? 'TAX INVOICE (DUPLICATE / REPRINT)' : 'TAX INVOICE'}
+              </div>
+              {isReprint && (
+                <div className="receipt-reprint-badge">*** DUPLICATE REPRINT ***</div>
+              )}
+              <div className="receipt-divider" />
+            </div>
+
+            {/* Invoice Meta Information */}
+            <div className="receipt-meta-grid">
+              <div className="receipt-meta-row">
+                <span>Inv: <strong>{invoice.invoice_number}</strong></span>
+                <span>Date: {formattedDate}</span>
+              </div>
+              <div className="receipt-meta-row">
+                <span>Type: <strong>{orderTypeLabel}</strong></span>
+                <span>Time: {formattedTime}</span>
+              </div>
+              <div className="receipt-meta-row">
+                {isDineIn ? (
+                  <span>Table: <strong>{invoice.table_number_snapshot || invoice.table_number || 'Dine-In'}</strong></span>
+                ) : (
+                  <span>Parcel Ref: <strong>{invoice.parcel_order_number || invoice.invoice_number}</strong></span>
+                )}
+                <span>Cashier: {invoice.cashier_name_snapshot || invoice.created_by_name || 'Staff'}</span>
+              </div>
+              {customerName && (
+                <div className="receipt-meta-customer">
+                  CUSTOMER: {customerName}
+                </div>
+              )}
+            </div>
+
+            <div className="receipt-divider" />
+
+            {/* Items Table */}
+            <table className="receipt-table">
+              <thead>
+                <tr>
+                  <th className="col-item">Item</th>
+                  <th className="col-qty">Qty</th>
+                  <th className="col-rate text-right">Rate</th>
+                  <th className="col-amt text-right">Amount</th>
+                </tr>
+              </thead>
+              <tbody>
+                {items.map((it, idx) => (
+                  <tr key={idx}>
+                    <td className="col-item">
+                      <div className="receipt-item-name">{it.product_name_snapshot || it.name}</div>
+                      {(it.variant || it.notes) && (
+                        <div className="receipt-item-variant">{it.variant || it.notes}</div>
+                      )}
+                    </td>
+                    <td className="col-qty">{it.quantity}</td>
+                    <td className="col-rate text-right">
+                      ₹{Number(it.unit_price_snapshot || it.unit_price || 0).toFixed(2)}
+                    </td>
+                    <td className="col-amt text-right">
+                      ₹{Number(it.line_total || (Number(it.unit_price_snapshot || it.unit_price || 0) * it.quantity)).toFixed(2)}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+
+            <div className="receipt-divider" />
+
+            {/* GST and Totals Section */}
+            <div className="receipt-totals">
+              <div className="receipt-totals-row">
+                <span>Taxable Subtotal:</span>
+                <span>₹{taxableSubtotal.toFixed(2)}</span>
+              </div>
+
+              {discountAmount > 0 && (
+                <div className="receipt-totals-row">
+                  <span>Discount:</span>
+                  <span>-₹{discountAmount.toFixed(2)}</span>
+                </div>
+              )}
+
+              {cgstAmount > 0 && (
+                <div className="receipt-totals-row">
+                  <span>CGST:</span>
+                  <span>₹{cgstAmount.toFixed(2)}</span>
+                </div>
+              )}
+
+              {sgstAmount > 0 && (
+                <div className="receipt-totals-row">
+                  <span>SGST:</span>
+                  <span>₹{sgstAmount.toFixed(2)}</span>
+                </div>
+              )}
+
+              {igstAmount > 0 && (
+                <div className="receipt-totals-row">
+                  <span>IGST:</span>
+                  <span>₹{igstAmount.toFixed(2)}</span>
+                </div>
+              )}
+
+              {cessAmount > 0 && (
+                <div className="receipt-totals-row">
+                  <span>GST Cess:</span>
+                  <span>₹{cessAmount.toFixed(2)}</span>
+                </div>
+              )}
+
+              {roundAdj !== 0 && (
+                <div className="receipt-totals-row">
+                  <span>Round Off:</span>
+                  <span>{roundAdj > 0 ? '+' : ''}₹{roundAdj.toFixed(2)}</span>
+                </div>
+              )}
+
+              <div className="receipt-grand-total">
+                <span>GRAND TOTAL:</span>
+                <span>₹{grandTotal.toFixed(2)}</span>
+              </div>
+            </div>
+
+            {/* Payment Details Section */}
+            <div className="receipt-divider" />
+            <div className="receipt-payments">
+              <div className="receipt-payments-header">
+                Payment Details ({payments.length > 1 ? 'Split Payment' : (payments[0]?.payment_method || invoice.payment_method || 'Cash')}):
+              </div>
+              {payments.length === 0 ? (
+                <div className="receipt-totals-row">
+                  <span>Amount Paid:</span>
+                  <span>₹{grandTotal.toFixed(2)}</span>
+                </div>
+              ) : (
+                payments.map((p, idx) => (
+                  <div key={idx} className="receipt-totals-row">
+                    <span>{p.payment_method} {p.transaction_reference ? `(${p.transaction_reference})` : ''}:</span>
+                    <span>₹{Number(p.amount || 0).toFixed(2)}</span>
+                  </div>
+                ))
+              )}
+
+              {changeReturned > 0 && (
+                <div className="receipt-totals-row receipt-change-row">
+                  <span>Change Returned:</span>
+                  <span>₹{changeReturned.toFixed(2)}</span>
+                </div>
+              )}
+
+              <div className="receipt-totals-row" style={{ marginTop: '3px' }}>
+                <span>Payment Status:</span>
+                <strong>{invoice.payment_status || 'PAID'}</strong>
+              </div>
+            </div>
+
+            {/* Footer */}
+            <div className="receipt-divider" />
+            <div className="receipt-footer">
+              {company?.fssai_number && (
+                <div className="receipt-fssai">FSSAI Lic No: {company.fssai_number}</div>
+              )}
+              <div className="receipt-footer-thanks">Thank you for visiting 8itcafe & Seri's hub!</div>
+              <div className="receipt-footer-msg">Please visit again. Have a wonderful day!</div>
+            </div>
           </div>
-
-          {/* Footer Note */}
-          <div style={{ textAlign: 'center', marginTop: '12px', fontSize: '11px' }}>
-            <div style={{ fontWeight: 'bold' }}>Thank you for visiting 8itcafe & Seri's hub!</div>
-            <div style={{ marginTop: '2px', color: 'var(--color-text-muted)' }}>Please visit again. Have a delightful day!</div>
-          </div>
-        </div>
-      </div>
-
-      {/* Hidden 80mm Print Media Container for window.print() */}
-      <div className="receipt-print-container">
-        <div className="receipt-header">
-          <div className="receipt-title">8itcafe & Seri's hub</div>
-          {company?.legal_name && company?.legal_name !== "8itcafe & Seri's hub" && (
-            <div>({company.legal_name})</div>
-          )}
-          <div>{company?.address_line1 || 'Shop 12, Main Street'}, {company?.city || 'Bengaluru'}</div>
-          <div>GSTIN: {company?.gstin || '29AAAAA0000A1Z5'}</div>
-          <div style={{ fontWeight: 'bold', marginTop: '4px' }}>
-            {isReprint ? 'TAX INVOICE (DUPLICATE / REPRINT)' : 'TAX INVOICE'}
-          </div>
-          {isReprint && (
-            <div style={{ fontWeight: 'bold', fontSize: '11px', margin: '2px 0' }}>*** DUPLICATE REPRINT ***</div>
-          )}
-        </div>
-
-        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '10px' }}>
-          <span>Inv: {invoice.invoice_number}</span>
-          <span>{new Date(invoice.created_at || Date.now()).toLocaleDateString('en-IN')}</span>
-        </div>
-        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '10px' }}>
-          <span>Cashier: {invoice.cashier_name_snapshot || invoice.created_by_name || 'Staff'}</span>
-          <span>{new Date(invoice.created_at || Date.now()).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}</span>
-        </div>
-
-        {customerName && (
-          <div style={{ fontSize: '11px', fontWeight: 'bold', margin: '4px 0' }}>
-            CUSTOMER: {customerName}
-          </div>
-        )}
-
-        <div className="receipt-divider"></div>
-
-        <table className="receipt-table">
-          <thead>
-            <tr>
-              <th>Item</th>
-              <th style={{ textAlign: 'center' }}>Qty</th>
-              <th className="text-right">Price</th>
-              <th className="text-right">Total</th>
-            </tr>
-          </thead>
-          <tbody>
-            {items.map((it, idx) => (
-              <tr key={idx}>
-                <td>{it.product_name_snapshot || it.name}</td>
-                <td style={{ textAlign: 'center' }}>{it.quantity}</td>
-                <td className="text-right">₹{Number(it.unit_price_snapshot || it.unit_price || 0).toFixed(2)}</td>
-                <td className="text-right">₹{Number(it.line_total || (Number(it.unit_price_snapshot || it.unit_price || 0) * it.quantity)).toFixed(2)}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-
-        <div className="receipt-divider"></div>
-
-        <div style={{ fontSize: '11px' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-            <span>Taxable Subtotal:</span>
-            <span>₹{Number(invoice.total_taxable_amount || invoice.totalTaxableAmount || invoice.subtotal_taxable || itemsTaxableTotal || invoice.subtotal_gross || 0).toFixed(2)}</span>
-          </div>
-          <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-            <span>CGST:</span>
-            <span>₹{Number(invoice.total_cgst_amount || invoice.cgst_amount || 0).toFixed(2)}</span>
-          </div>
-          <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-            <span>SGST:</span>
-            <span>₹{Number(invoice.total_sgst_amount || invoice.sgst_amount || 0).toFixed(2)}</span>
-          </div>
-          <div className="receipt-divider"></div>
-          <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 'bold', fontSize: '14px' }}>
-            <span>GRAND TOTAL:</span>
-            <span>₹{Number(invoice.grand_total || 0).toFixed(2)}</span>
-          </div>
-        </div>
-
-        <div className="receipt-footer">
-          <div>Thank you for visiting 8itcafe & Seri's hub!</div>
-          <div>Please visit again!</div>
         </div>
       </div>
     </Modal>
