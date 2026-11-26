@@ -163,19 +163,29 @@ export function ReceiptModal({ isOpen, onClose, invoice, company }) {
         <div className="receipt-screen-wrapper">
           {/* Unified 80mm Thermal Receipt Structure (used for both on-screen & print) */}
           <div className="receipt-thermal-paper receipt-print-container">
-            {/* Header */}
+            {/* Header: Centered Logo -> Trade Name -> TAX INVOICE -> Address -> GSTIN */}
             <div className="receipt-header">
               {logoSrc && (
                 <div className="receipt-logo-wrap">
                   <img src={logoSrc} alt="8it Cafe" className="receipt-logo-img" />
                 </div>
               )}
-              <div className="receipt-brand-title">8itcafe & Seri's hub</div>
-              {company?.legal_name && company?.legal_name !== "8itcafe & Seri's hub" && (
+              <div className="receipt-brand-title" data-brand="8itcafe & Seri's hub">
+                8it Cafe & Seri's Hub
+              </div>
+              {company?.legal_name && company?.legal_name !== "8it Cafe & Seri's Hub" && company?.legal_name !== "8itcafe & Seri's hub" && (
                 <div className="receipt-legal-name">({company.legal_name})</div>
               )}
+              
+              <div className="receipt-doc-title">
+                {isReprint ? 'TAX INVOICE (DUPLICATE / REPRINT)' : 'TAX INVOICE'}
+              </div>
+              {isReprint && (
+                <div className="receipt-reprint-badge">*** DUPLICATE REPRINT ***</div>
+              )}
+
               <div className="receipt-address">
-                {company?.address_line1 || 'Main Street Promenade'}{company?.address_line2 ? `, ${company.address_line2}` : ''}
+                <div>{company?.address_line1 || 'Main Street Promenade'}{company?.address_line2 ? `, ${company.address_line2}` : ''}</div>
                 <div>{company?.city || 'Kozhikode'}{company?.state_name ? `, ${company.state_name}` : ''} - {company?.pincode || '673001'}</div>
                 {company?.phone && <div>Ph: {company.phone}</div>}
               </div>
@@ -184,32 +194,24 @@ export function ReceiptModal({ isOpen, onClose, invoice, company }) {
               </div>
 
               <div className="receipt-divider" />
-              <div className="receipt-doc-title">
-                {isReprint ? 'TAX INVOICE (DUPLICATE / REPRINT)' : 'TAX INVOICE'}
-              </div>
-              {isReprint && (
-                <div className="receipt-reprint-badge">*** DUPLICATE REPRINT ***</div>
-              )}
-              <div className="receipt-divider" />
             </div>
 
-            {/* Invoice Meta Information */}
+            {/* Invoice Information: Compact, aligned, cashier & parcel references */}
             <div className="receipt-meta-grid">
               <div className="receipt-meta-row">
-                <span>Inv: <strong>{invoice.invoice_number}</strong></span>
-                <span>Date: {formattedDate}</span>
+                <span>Invoice: <strong>{invoice.invoice_number}</strong></span>
+                <span>{formattedDate} {formattedTime}</span>
               </div>
               <div className="receipt-meta-row">
-                <span>Type: <strong>{orderTypeLabel}</strong></span>
-                <span>Time: {formattedTime}</span>
-              </div>
-              <div className="receipt-meta-row">
+                <span>Order Type: <strong>{orderTypeLabel}</strong></span>
                 {isDineIn ? (
                   <span>Table: <strong>{invoice.table_number_snapshot || invoice.table_number || 'Dine-In'}</strong></span>
                 ) : (
                   <span>Parcel Ref: <strong>{invoice.parcel_order_number || invoice.invoice_number}</strong></span>
                 )}
-                <span>Cashier: {invoice.cashier_name_snapshot || invoice.created_by_name || 'Staff'}</span>
+              </div>
+              <div className="receipt-meta-row">
+                <span>Cashier: <strong>{invoice.cashier_name_snapshot || invoice.created_by_name || 'Staff'}</strong></span>
               </div>
               {customerName && (
                 <div className="receipt-meta-customer">
@@ -220,14 +222,14 @@ export function ReceiptModal({ isOpen, onClose, invoice, company }) {
 
             <div className="receipt-divider" />
 
-            {/* Items Table */}
+            {/* Item Details Table: ITEM | QTY | RATE | AMOUNT */}
             <table className="receipt-table">
               <thead>
                 <tr>
-                  <th className="col-item">Item</th>
-                  <th className="col-qty">Qty</th>
-                  <th className="col-rate text-right">Rate</th>
-                  <th className="col-amt text-right">Amount</th>
+                  <th className="col-item">ITEM</th>
+                  <th className="col-qty text-right">QTY</th>
+                  <th className="col-rate text-right">RATE</th>
+                  <th className="col-amt text-right">AMOUNT</th>
                 </tr>
               </thead>
               <tbody>
@@ -239,7 +241,7 @@ export function ReceiptModal({ isOpen, onClose, invoice, company }) {
                         <div className="receipt-item-variant">{it.variant || it.notes}</div>
                       )}
                     </td>
-                    <td className="col-qty">{it.quantity}</td>
+                    <td className="col-qty text-right">{it.quantity}</td>
                     <td className="col-rate text-right">
                       ₹{Number(it.unit_price_snapshot || it.unit_price || 0).toFixed(2)}
                     </td>
@@ -253,37 +255,47 @@ export function ReceiptModal({ isOpen, onClose, invoice, company }) {
 
             <div className="receipt-divider" />
 
-            {/* GST and Totals Section */}
+            {/* Financial Summary & Grand Total (No Rounding Adjustment row displayed) */}
             <div className="receipt-totals">
-              <div className="receipt-totals-row">
-                <span>Taxable Subtotal:</span>
-                <span>₹{taxableSubtotal.toFixed(2)}</span>
-              </div>
-
-              {discountAmount > 0 && (
+              {discountAmount > 0 ? (
+                <>
+                  <div className="receipt-totals-row">
+                    <span>Gross Subtotal:</span>
+                    <span>₹{(taxableSubtotal + discountAmount).toFixed(2)}</span>
+                  </div>
+                  <div className="receipt-totals-row">
+                    <span>Discount:</span>
+                    <span>-₹{discountAmount.toFixed(2)}</span>
+                  </div>
+                  <div className="receipt-totals-row">
+                    <span>Taxable Subtotal:</span>
+                    <span>₹{taxableSubtotal.toFixed(2)}</span>
+                  </div>
+                </>
+              ) : (
                 <div className="receipt-totals-row">
-                  <span>Discount:</span>
-                  <span>-₹{discountAmount.toFixed(2)}</span>
+                  <span>Taxable Subtotal:</span>
+                  <span>₹{taxableSubtotal.toFixed(2)}</span>
                 </div>
               )}
 
               {cgstAmount > 0 && (
                 <div className="receipt-totals-row">
-                  <span>CGST:</span>
+                  <span>CGST Amount:</span>
                   <span>₹{cgstAmount.toFixed(2)}</span>
                 </div>
               )}
 
               {sgstAmount > 0 && (
                 <div className="receipt-totals-row">
-                  <span>SGST:</span>
+                  <span>SGST Amount:</span>
                   <span>₹{sgstAmount.toFixed(2)}</span>
                 </div>
               )}
 
               {igstAmount > 0 && (
                 <div className="receipt-totals-row">
-                  <span>IGST:</span>
+                  <span>IGST Amount:</span>
                   <span>₹{igstAmount.toFixed(2)}</span>
                 </div>
               )}
@@ -292,13 +304,6 @@ export function ReceiptModal({ isOpen, onClose, invoice, company }) {
                 <div className="receipt-totals-row">
                   <span>GST Cess:</span>
                   <span>₹{cessAmount.toFixed(2)}</span>
-                </div>
-              )}
-
-              {roundAdj !== 0 && (
-                <div className="receipt-totals-row">
-                  <span>Round Off:</span>
-                  <span>{roundAdj > 0 ? '+' : ''}₹{roundAdj.toFixed(2)}</span>
                 </div>
               )}
 
@@ -312,17 +317,17 @@ export function ReceiptModal({ isOpen, onClose, invoice, company }) {
             <div className="receipt-divider" />
             <div className="receipt-payments">
               <div className="receipt-payments-header">
-                Payment Details ({payments.length > 1 ? 'Split Payment' : (payments[0]?.payment_method || invoice.payment_method || 'Cash')}):
+                PAYMENT DETAILS
               </div>
               {payments.length === 0 ? (
                 <div className="receipt-totals-row">
-                  <span>Amount Paid:</span>
+                  <span>{invoice.payment_method || 'Cash'}:</span>
                   <span>₹{grandTotal.toFixed(2)}</span>
                 </div>
               ) : (
                 payments.map((p, idx) => (
                   <div key={idx} className="receipt-totals-row">
-                    <span>{p.payment_method} {p.transaction_reference ? `(${p.transaction_reference})` : ''}:</span>
+                    <span>{p.payment_method || 'Payment'}{p.transaction_reference ? ` (${p.transaction_reference})` : ''}:</span>
                     <span>₹{Number(p.amount || 0).toFixed(2)}</span>
                   </div>
                 ))
@@ -347,8 +352,8 @@ export function ReceiptModal({ isOpen, onClose, invoice, company }) {
               {company?.fssai_number && (
                 <div className="receipt-fssai">FSSAI Lic No: {company.fssai_number}</div>
               )}
-              <div className="receipt-footer-thanks">Thank you for visiting 8itcafe & Seri's hub!</div>
-              <div className="receipt-footer-msg">Please visit again. Have a wonderful day!</div>
+              <div className="receipt-footer-thanks">Thank you for visiting!</div>
+              <div className="receipt-footer-msg">Have a wonderful day.</div>
             </div>
           </div>
         </div>
