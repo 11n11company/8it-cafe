@@ -293,83 +293,54 @@ export function ReportsScreen({ brandId: initialBrandId = '', onBrandChange = nu
         </div>
       </div>
 
-      {/* Visual Analytics Grid: Multi-Brand Revenue Share / Operational Health */}
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: '20px' }}>
-        {/* Brand Performance Share (Visible on Consolidated View) */}
-        {!brandId && (
-          <div className="admin-table-card" style={{ padding: '20px' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px' }}>
-              <h4 style={{ color: 'var(--text-primary)', fontSize: '1rem', margin: 0 }}>Multi-Brand Revenue Segregation</h4>
-              <span className="text-xs text-muted">No Double Counting</span>
-            </div>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
-              {brandsPerf.length === 0 ? (
-                <p className="text-muted text-center" style={{ padding: '20px' }}>No brand sales recorded</p>
-              ) : (
-                (() => {
-                  const totalCompanySales = brandsPerf.reduce((acc, bp) => acc + Number(bp.netSales || bp.net_sales || 0), 0);
-                  return brandsPerf.map((bp, idx) => {
-                    const brandSales = Number(bp.netSales || bp.net_sales || 0);
-                    const pct = totalCompanySales > 0 ? ((brandSales / totalCompanySales) * 100).toFixed(1) : '0.0';
-                    const isSeris = String(bp.brandName || bp.brand_name).toLowerCase().includes('seri');
-                    const brandColor = isSeris ? 'var(--color-accent)' : 'var(--color-primary)';
+      {/* Brand Performance Share (Visible on Consolidated View) */}
+      {!brandId && (
+        <div className="admin-table-card" style={{ padding: '20px' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px' }}>
+            <h4 style={{ color: 'var(--text-primary)', fontSize: '1rem', margin: 0 }}>Multi-Brand Revenue Segregation</h4>
+            <span className="text-xs text-muted">No Double Counting</span>
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+            {brandsPerf.length === 0 ? (
+              <p className="text-muted text-center" style={{ padding: '20px' }}>No brand sales recorded</p>
+            ) : (
+              (() => {
+                const totalCompanySales = brandsPerf.reduce((acc, bp) => acc + Number(bp.netSales || bp.net_sales || 0), 0);
+                return brandsPerf.map((bp, idx) => {
+                  const brandSales = Number(bp.netSales || bp.net_sales || 0);
+                  const pct = totalCompanySales > 0 ? ((brandSales / totalCompanySales) * 100).toFixed(1) : '0.0';
+                  const isSeris = String(bp.brandName || bp.brand_name).toLowerCase().includes('seri');
+                  const brandColor = isSeris ? 'var(--color-accent)' : 'var(--color-primary)';
 
-                    return (
-                      <div key={bp.brandId || idx} style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.85rem' }}>
-                          <span className="font-bold">
-                            {bp.brandName || bp.brand_name} ({bp.brandCode || bp.brand_code})
-                          </span>
-                          <span className="mono font-bold" style={{ color: brandColor }}>
-                            ₹{brandSales.toFixed(2)} ({pct}%) • {bp.itemsSold || 0} items
-                          </span>
-                        </div>
-                        <div style={{ width: '100%', height: '10px', background: 'var(--bg-surface-elevated)', borderRadius: '5px', overflow: 'hidden' }}>
-                          <div
-                            style={{
-                              height: '100%',
-                              width: `${Math.min(100, Number(pct))}%`,
-                              background: brandColor,
-                              borderRadius: '5px',
-                              transition: 'width 0.3s ease-in-out'
-                            }}
-                          />
-                        </div>
+                  return (
+                    <div key={bp.brandId || idx} style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.85rem' }}>
+                        <span className="font-bold">
+                          {bp.brandName || bp.brand_name} ({bp.brandCode || bp.brand_code})
+                        </span>
+                        <span className="mono font-bold" style={{ color: brandColor }}>
+                          ₹{brandSales.toFixed(2)} ({pct}%) • {bp.itemsSold || 0} items
+                        </span>
                       </div>
-                    );
-                  });
-                })()
-              )}
-            </div>
+                      <div style={{ width: '100%', height: '10px', background: 'var(--bg-surface-elevated)', borderRadius: '5px', overflow: 'hidden' }}>
+                        <div
+                          style={{
+                            height: '100%',
+                            width: `${Math.min(100, Number(pct))}%`,
+                            background: brandColor,
+                            borderRadius: '5px',
+                            transition: 'width 0.3s ease-in-out'
+                          }}
+                        />
+                      </div>
+                    </div>
+                  );
+                });
+              })()
+            )}
           </div>
-        )}
-
-        {/* If filtered by brand: Quick Inventory / Wastage Snapshot */}
-        {brandId && (
-          <div className="admin-table-card" style={{ padding: '20px' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px' }}>
-              <h4 style={{ color: 'var(--text-primary)', fontSize: '1rem', margin: 0 }}>Operational Health</h4>
-              <span className="text-xs text-muted">Stock & Adjustments</span>
-            </div>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
-              <div style={{ padding: '12px', background: 'var(--bg-surface-elevated)', borderRadius: '8px' }}>
-                <span className="text-xs text-muted">Inventory Valuation</span>
-                <p className="mono font-bold" style={{ fontSize: '1.2rem', color: 'var(--color-heading)', margin: '4px 0 0 0' }}>
-                  ₹{Number(inventory.valuation || 0).toFixed(2)}
-                </p>
-                <span className="text-xs text-muted">{inventory.lowStockCount || 0} low stock items</span>
-              </div>
-              <div style={{ padding: '12px', background: 'var(--bg-surface-elevated)', borderRadius: '8px' }}>
-                <span className="text-xs text-muted">Wastage / Expiry Loss</span>
-                <p className="mono font-bold" style={{ fontSize: '1.2rem', color: 'var(--color-danger)', margin: '4px 0 0 0' }}>
-                  ₹{Number(wastage.lossAmount || 0).toFixed(2)}
-                </p>
-                <span className="text-xs text-muted">{Number(wastage.wastedQuantity || 0).toFixed(1)} units written off</span>
-              </div>
-            </div>
-          </div>
-        )}
-      </div>
+        </div>
+      )}
 
       {/* Top Products Table */}
       <div className="admin-table-card">
