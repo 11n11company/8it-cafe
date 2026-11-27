@@ -173,6 +173,7 @@ export function ReportsScreen({ brandId: initialBrandId = '', onBrandChange = nu
             variant="primary"
             size="sm"
             onClick={() => setPdfModalOpen(true)}
+            title="Download single outlet daily or monthly PDF report"
             style={{
               display: 'inline-flex',
               alignItems: 'center',
@@ -183,8 +184,8 @@ export function ReportsScreen({ brandId: initialBrandId = '', onBrandChange = nu
               fontSize: '0.82rem'
             }}
           >
-            <span>📄</span>
-            <span>Generate PDF Report</span>
+            <span>⬇️</span>
+            <span>Download / Generate PDF Report</span>
           </Button>
 
           <a
