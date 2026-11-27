@@ -1518,4 +1518,41 @@ describe('Frontend POS & Administration Interface Tests', () => {
       assert.ok(historyCode.includes('CUSTOMER: {selectedInvoice.customer_name}'), 'Renders CUSTOMER in invoice details drawer');
     });
   });
+
+  // ==========================================================================
+  // SUITE 31: ADMIN REPORT PDF GENERATOR (SINGLE OUTLET DAILY & MONTHLY)
+  // ==========================================================================
+  describe('Suite 31: Admin Report PDF Generator (Single Outlet Daily & Monthly)', () => {
+    it('31.1 ReportsScreen renders Generate PDF Report trigger and mounts ReportPdfModal', () => {
+      const repCode = fs.readFileSync(path.join(__dirname, '../src/components/reports/ReportsScreen.jsx'), 'utf8');
+      assert.ok(repCode.includes('Generate PDF Report'), 'ReportsScreen must render Generate PDF Report button');
+      assert.ok(repCode.includes('<ReportPdfModal'), 'ReportsScreen must mount ReportPdfModal component');
+      assert.ok(repCode.includes('setPdfModalOpen(true)'), 'Clicking action opens modal');
+    });
+
+    it('31.2 ReportPdfModal supports single outlet selection and consolidated mode', () => {
+      const modalCode = fs.readFileSync(path.join(__dirname, '../src/components/reports/ReportPdfModal.jsx'), 'utf8');
+      assert.ok(modalCode.includes('selectedBrandId'), 'Tracks selected outlet/brand state');
+      assert.ok(modalCode.includes('Consolidated (All Outlets)'), 'Offers consolidated option alongside single outlets');
+      assert.ok(modalCode.includes('brands.map'), 'Dynamically renders configured outlet options');
+    });
+
+    it('31.3 ReportPdfModal supports both Daily and Monthly report frequencies with respective date/month pickers', () => {
+      const modalCode = fs.readFileSync(path.join(__dirname, '../src/components/reports/ReportPdfModal.jsx'), 'utf8');
+      assert.ok(modalCode.includes("frequency === 'daily'"), 'Supports Daily frequency branch');
+      assert.ok(modalCode.includes("frequency === 'monthly'"), 'Supports Monthly frequency branch');
+      assert.ok(modalCode.includes('type="date"'), 'Provides date input for daily report');
+      assert.ok(modalCode.includes('type="month"'), 'Provides month input for monthly report');
+    });
+
+    it('31.4 ReportPdfModal generates high-resolution A4 document with statutory sections', () => {
+      const modalCode = fs.readFileSync(path.join(__dirname, '../src/components/reports/ReportPdfModal.jsx'), 'utf8');
+      assert.ok(modalCode.includes('size: A4 portrait'), 'Configures A4 portrait print layout');
+      assert.ok(modalCode.includes('DAILY BUSINESS PERFORMANCE REPORT'), 'Includes Daily report title');
+      assert.ok(modalCode.includes('MONTHLY BUSINESS SUMMARY REPORT'), 'Includes Monthly report title');
+      assert.ok(modalCode.includes('Statutory GST Tax Allocation'), 'Includes statutory GST slab table');
+      assert.ok(modalCode.includes('Order Fulfillment Channels'), 'Includes fulfillment channels breakdown');
+      assert.ok(modalCode.includes('Payment Tender Reconciliation'), 'Includes tender reconciliation');
+    });
+  });
 });

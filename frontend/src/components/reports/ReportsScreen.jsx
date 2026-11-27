@@ -2,11 +2,14 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { Button } from '../common/Button';
 import { Alert } from '../common/Alert';
 import { api } from '../../services/api';
+import { ReportPdfModal } from './ReportPdfModal';
 
 export function ReportsScreen({ brandId: initialBrandId = '', onBrandChange = null }) {
   const [datePreset, setDatePreset] = useState('today');
   const [brandId, setBrandId] = useState(initialBrandId);
   const [brands, setBrands] = useState([]);
+  const [company, setCompany] = useState(null);
+  const [pdfModalOpen, setPdfModalOpen] = useState(false);
 
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -24,10 +27,13 @@ export function ReportsScreen({ brandId: initialBrandId = '', onBrandChange = nu
     if (onBrandChange) onBrandChange(bId);
   };
 
-  // Load Brands
+  // Load Brands and Company
   useEffect(() => {
     api.brands.list()
       .then(res => setBrands(res?.data || []))
+      .catch(() => {});
+    api.company.get()
+      .then(res => setCompany(res?.data || null))
       .catch(() => {});
   }, []);
 
@@ -161,6 +167,24 @@ export function ReportsScreen({ brandId: initialBrandId = '', onBrandChange = nu
 
           <Button variant="outline" size="sm" onClick={loadReports} loading={loading}>
             ↻ Refresh
+          </Button>
+
+          <Button
+            variant="primary"
+            size="sm"
+            onClick={() => setPdfModalOpen(true)}
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '6px',
+              height: '36px',
+              padding: '0 14px',
+              fontWeight: 600,
+              fontSize: '0.82rem'
+            }}
+          >
+            <span>📄</span>
+            <span>Generate PDF Report</span>
           </Button>
 
           <a
@@ -496,6 +520,17 @@ export function ReportsScreen({ brandId: initialBrandId = '', onBrandChange = nu
           ⚖️ Operational reports based on immutable invoice item snapshots. Official GSTR-1, GSTR-3B, and statutory filings must be verified with filed returns and accountant books of accounts.
         </p>
       </div>
+
+      {/* PDF Report Generation Modal (Single Outlet / Consolidated Daily & Monthly) */}
+      {pdfModalOpen && (
+        <ReportPdfModal
+          isOpen={pdfModalOpen}
+          onClose={() => setPdfModalOpen(false)}
+          brands={brands}
+          initialBrandId={brandId}
+          company={company}
+        />
+      )}
     </div>
   );
 }
