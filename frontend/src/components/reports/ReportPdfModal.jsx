@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import { jsPDF } from 'jspdf';
 import { Modal } from '../common/Modal';
 import { Button } from '../common/Button';
 import { Alert } from '../common/Alert';
@@ -83,6 +84,7 @@ export function ReportPdfModal({
   const [selectedDate, setSelectedDate] = useState(getTodayDateStr());
   const [selectedMonth, setSelectedMonth] = useState(getCurrentMonthStr());
   const [previewMode, setPreviewMode] = useState(false);
+  const [downloadSuccess, setDownloadSuccess] = useState(null);
 
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
@@ -146,6 +148,7 @@ export function ReportPdfModal({
   const fetchReportData = useCallback(async () => {
     setLoading(true);
     setError(null);
+    setDownloadSuccess(null);
     try {
       const res = await api.reports.getDashboard(queryParams);
       setReportData(res?.data || null);
@@ -191,8 +194,287 @@ export function ReportPdfModal({
     }
   }, [frequency, selectedDate, selectedMonth]);
 
-  // Construct PDF Document HTML and trigger Print/Save dialog
-  const handleGeneratePdf = () => {
+  /**
+   * DIRECT 1-CLICK PDF FILE DOWNLOAD
+   * Generates a genuine .pdf binary document file and saves directly to the browser Downloads folder.
+   */
+  const handleDirectPdfDownload = () => {
+    if (!reportData) return;
+
+    try {
+      const summary = reportData.summary || {};
+      const payments = reportData.payments || {};
+      const topProducts = reportData.topSellingProducts || [];
+      const taxBreakdown = reportData.taxBreakdown || [];
+      const orderTypes = reportData.orderTypeBreakdown || {};
+
+      const tradeName = company?.trade_name || "8it Cafe & Seri's Hub";
+      const address = `${company?.address_line1 || 'Main Street Promenade'}, ${company?.city || 'Kozhikode'} - ${company?.pincode || '673001'}`;
+      const gstin = company?.gstin || '32AAACA0000A1Z5';
+
+      const safeFileBrand = (selectedBrand?.name || 'Consolidated').replace(/[^a-zA-Z0-9_-]/g, '_');
+      const safeFilePeriod = frequency === 'daily' ? selectedDate : selectedMonth;
+      const documentTitle = `8it_Cafe_${safeFileBrand}_${frequency === 'daily' ? 'Daily' : 'Monthly'}_Report_${safeFilePeriod}.pdf`;
+
+      const doc = new jsPDF('p', 'mm', 'a4');
+      const pageWidth = doc.internal.pageSize.getWidth(); // 210mm
+      let y = 16;
+
+      // Header
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(15);
+      doc.setTextColor(15, 23, 42); // slate-900
+      doc.text(tradeName.toUpperCase(), 14, y);
+      y += 6;
+
+      doc.setFontSize(10.5);
+      doc.setTextColor(13, 148, 136); // teal-600
+      const reportTypeTitle = frequency === 'daily'
+        ? 'DAILY BUSINESS PERFORMANCE REPORT'
+        : 'MONTHLY BUSINESS SUMMARY REPORT';
+      doc.text(reportTypeTitle, 14, y);
+      y += 5;
+
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(8);
+      doc.setTextColor(71, 85, 105); // slate-600
+      doc.text(`${address} | GSTIN: ${gstin}`, 14, y);
+      y += 5;
+
+      // Divider line
+      doc.setDrawColor(203, 213, 225);
+      doc.setLineWidth(0.4);
+      doc.line(14, y, pageWidth - 14, y);
+      y += 5;
+
+      // Scope Banner Box
+      doc.setFillColor(241, 245, 249);
+      doc.roundedRect(14, y, pageWidth - 28, 9, 1.5, 1.5, 'F');
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(8.5);
+      doc.setTextColor(15, 23, 42);
+      doc.text(`Outlet: ${outletDisplayName}`, 18, y + 5.8);
+      doc.setTextColor(13, 148, 136);
+      doc.text(`Period: ${periodLabel}`, pageWidth - 18, y + 5.8, { align: 'right' });
+      y += 14;
+
+      // Executive KPI Summary Section
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(9.5);
+      doc.setTextColor(15, 23, 42);
+      doc.text('EXECUTIVE FINANCIAL SUMMARY', 14, y);
+      y += 4;
+
+      const kpiWidth = (pageWidth - 28 - 9) / 4;
+      const kpis = [
+        { title: 'NET TURNOVER', val: formatRupee(summary.netSales), sub: `Gross: ${formatRupee(summary.grossSales)}` },
+        { title: 'BILLS / INVOICES', val: String(summary.invoiceCount || 0), sub: `Avg Bill: ${formatRupee(summary.averageInvoiceValue)}` },
+        { title: 'PRODUCTS SOLD', val: `${summary.itemsSold || 0} items`, sub: 'Customer turns' },
+        { title: 'TOTAL GST TAX', val: formatRupee(summary.totalTax), sub: `CGST: ${formatRupee(summary.cgst)}` }
+      ];
+
+      kpis.forEach((kpi, i) => {
+        const kX = 14 + i * (kpiWidth + 3);
+        doc.setFillColor(248, 250, 252);
+        doc.setDrawColor(226, 232, 240);
+        doc.roundedRect(kX, y, kpiWidth, 15, 1, 1, 'FD');
+
+        doc.setFont('helvetica', 'normal');
+        doc.setFontSize(6.5);
+        doc.setTextColor(100, 116, 139);
+        doc.text(kpi.title, kX + 3, y + 4.2);
+
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(10);
+        doc.setTextColor(15, 23, 42);
+        doc.text(kpi.val, kX + 3, y + 9.5);
+
+        doc.setFont('helvetica', 'normal');
+        doc.setFontSize(6);
+        doc.setTextColor(100, 116, 139);
+        doc.text(kpi.sub, kX + 3, y + 13.2);
+      });
+      y += 20;
+
+      // Order Channels & Payments (Two Columns)
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(8.5);
+      doc.setTextColor(15, 23, 42);
+      doc.text('ORDER FULFILLMENT CHANNELS', 14, y);
+      doc.text('PAYMENT TENDER RECONCILIATION', 110, y);
+      y += 4;
+
+      // Channels Table
+      const colW1 = 90;
+      doc.setFillColor(241, 245, 249);
+      doc.rect(14, y, colW1, 5, 'F');
+      doc.setFontSize(7);
+      doc.setTextColor(30, 41, 59);
+      doc.text('Channel', 16, y + 3.5);
+      doc.text('Orders', 60, y + 3.5, { align: 'center' });
+      doc.text('Net Sales', 102, y + 3.5, { align: 'right' });
+      y += 5;
+
+      const channels = [
+        { name: 'Dine-In (Waiter Tables)', orders: orderTypes?.dineIn?.invoiceCount || 0, net: formatRupee(orderTypes?.dineIn?.netSales) },
+        { name: 'Parcel / Takeaway (Counter)', orders: orderTypes?.parcel?.invoiceCount || 0, net: formatRupee(orderTypes?.parcel?.netSales) }
+      ];
+      channels.forEach(ch => {
+        doc.setFont('helvetica', 'normal');
+        doc.text(ch.name, 16, y + 3.5);
+        doc.text(String(ch.orders), 60, y + 3.5, { align: 'center' });
+        doc.setFont('helvetica', 'bold');
+        doc.text(ch.net, 102, y + 3.5, { align: 'right' });
+        doc.setDrawColor(226, 232, 240);
+        doc.line(14, y + 4.5, 14 + colW1, y + 4.5);
+        y += 5;
+      });
+
+      // Payments Table (Right Column)
+      let payY = y - 15;
+      const colW2 = 86;
+      doc.setFillColor(241, 245, 249);
+      doc.rect(110, payY, colW2, 5, 'F');
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(7);
+      doc.setTextColor(30, 41, 59);
+      doc.text('Payment Tender', 112, payY + 3.5);
+      doc.text('Txns', 155, payY + 3.5, { align: 'center' });
+      doc.text('Collected', 194, payY + 3.5, { align: 'right' });
+      payY += 5;
+
+      const tenders = [
+        { name: 'Cash Collections', txns: payments.byMethod?.CASH?.count || 0, amt: formatRupee(payments.byMethod?.CASH?.amount) },
+        { name: 'UPI Digital Payments', txns: payments.byMethod?.UPI?.count || 0, amt: formatRupee(payments.byMethod?.UPI?.amount) },
+        { name: 'Card Swipes', txns: payments.byMethod?.CARD?.count || 0, amt: formatRupee(payments.byMethod?.CARD?.amount) }
+      ];
+      tenders.forEach(t => {
+        doc.setFont('helvetica', 'normal');
+        doc.text(t.name, 112, payY + 3.5);
+        doc.text(String(t.txns), 155, payY + 3.5, { align: 'center' });
+        doc.setFont('helvetica', 'bold');
+        doc.text(t.amt, 194, payY + 3.5, { align: 'right' });
+        doc.setDrawColor(226, 232, 240);
+        doc.line(110, payY + 4.5, 110 + colW2, payY + 4.5);
+        payY += 5;
+      });
+
+      y = Math.max(y, payY) + 6;
+
+      // Statutory GST Slabs Table
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(8.5);
+      doc.setTextColor(15, 23, 42);
+      doc.text('STATUTORY GST TAX ALLOCATION (SLAB-WISE)', 14, y);
+      y += 4;
+
+      doc.setFillColor(241, 245, 249);
+      doc.rect(14, y, pageWidth - 28, 5, 'F');
+      doc.setFontSize(7);
+      doc.setTextColor(30, 41, 59);
+      doc.text('GST Slab', 16, y + 3.5);
+      doc.text('Items', 55, y + 3.5, { align: 'right' });
+      doc.text('Taxable Value', 85, y + 3.5, { align: 'right' });
+      doc.text('CGST', 115, y + 3.5, { align: 'right' });
+      doc.text('SGST', 145, y + 3.5, { align: 'right' });
+      doc.text('Total GST', 170, y + 3.5, { align: 'right' });
+      doc.text('Gross Total', 194, y + 3.5, { align: 'right' });
+      y += 5;
+
+      if (taxBreakdown.length === 0) {
+        doc.setFont('helvetica', 'normal');
+        doc.text('No tax breakdown recorded for this period.', 16, y + 3.5);
+        y += 5;
+      } else {
+        taxBreakdown.forEach(tb => {
+          doc.setFont('helvetica', 'bold');
+          doc.text(tb.slabName, 16, y + 3.5);
+          doc.setFont('helvetica', 'normal');
+          doc.text(String(tb.itemsSold), 55, y + 3.5, { align: 'right' });
+          doc.text(formatRupee(tb.taxableAmount), 85, y + 3.5, { align: 'right' });
+          doc.text(formatRupee(tb.cgst), 115, y + 3.5, { align: 'right' });
+          doc.text(formatRupee(tb.sgst), 145, y + 3.5, { align: 'right' });
+          doc.setFont('helvetica', 'bold');
+          doc.setTextColor(13, 148, 136);
+          doc.text(formatRupee(tb.totalTax), 170, y + 3.5, { align: 'right' });
+          doc.setTextColor(15, 23, 42);
+          doc.text(formatRupee(tb.netSales), 194, y + 3.5, { align: 'right' });
+          doc.setDrawColor(226, 232, 240);
+          doc.line(14, y + 4.5, pageWidth - 14, y + 4.5);
+          y += 5;
+        });
+      }
+      y += 5;
+
+      // Top Selling Products Table
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(8.5);
+      doc.setTextColor(15, 23, 42);
+      doc.text('TOP SELLING PRODUCTS', 14, y);
+      y += 4;
+
+      doc.setFillColor(241, 245, 249);
+      doc.rect(14, y, pageWidth - 28, 5, 'F');
+      doc.setFontSize(7);
+      doc.setTextColor(30, 41, 59);
+      doc.text('#', 16, y + 3.5);
+      doc.text('Item Code', 26, y + 3.5);
+      doc.text('Product Name', 65, y + 3.5);
+      doc.text('Brand', 125, y + 3.5);
+      doc.text('Units Sold', 160, y + 3.5, { align: 'right' });
+      doc.text('Net Revenue', 194, y + 3.5, { align: 'right' });
+      y += 5;
+
+      const prodsToRender = topProducts.slice(0, 8);
+      if (prodsToRender.length === 0) {
+        doc.setFont('helvetica', 'normal');
+        doc.text('No product sales recorded for this period.', 16, y + 3.5);
+        y += 5;
+      } else {
+        prodsToRender.forEach((tp, idx) => {
+          doc.setFont('helvetica', 'normal');
+          doc.text(String(idx + 1), 16, y + 3.5);
+          doc.text(String(tp.itemCode || '-'), 26, y + 3.5);
+          doc.setFont('helvetica', 'bold');
+          doc.text(String(tp.productName).slice(0, 32), 65, y + 3.5);
+          doc.setFont('helvetica', 'normal');
+          doc.text(String(tp.brandName || '-'), 125, y + 3.5);
+          doc.text(String(tp.unitsSold), 160, y + 3.5, { align: 'right' });
+          doc.setFont('helvetica', 'bold');
+          doc.text(formatRupee(tp.netRevenue), 194, y + 3.5, { align: 'right' });
+          doc.setDrawColor(226, 232, 240);
+          doc.line(14, y + 4.5, pageWidth - 14, y + 4.5);
+          y += 5;
+        });
+      }
+      y += 10;
+
+      // Signatures
+      doc.setDrawColor(148, 163, 184);
+      doc.setLineDashPattern([1, 1], 0);
+      doc.line(14, y, 75, y);
+      doc.line(pageWidth - 75, y, pageWidth - 14, y);
+      doc.setLineDashPattern([], 0);
+
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(7.5);
+      doc.setTextColor(71, 85, 105);
+      doc.text('Prepared By: Cashier / Duty Manager', 14, y + 4);
+      doc.text('Verified & Approved: Store Manager / Auditor', pageWidth - 14, y + 4, { align: 'right' });
+
+      // Save PDF file to Downloads directly!
+      doc.save(documentTitle);
+      setDownloadSuccess(`✓ PDF successfully downloaded: ${documentTitle}`);
+    } catch (err) {
+      setError(`PDF generation failed: ${err.message}`);
+    }
+  };
+
+  /**
+   * PRINT / PRINT-TO-PDF VIA BROWSER DIALOG
+   * Opens an isolated A4 print preview window with auto-print.
+   */
+  const handlePrintPreview = () => {
     if (!reportData) return;
 
     const summary = reportData.summary || {};
@@ -202,12 +484,10 @@ export function ReportPdfModal({
     const taxBreakdown = reportData.taxBreakdown || [];
     const orderTypes = reportData.orderTypeBreakdown || {};
 
-    const companyName = company?.legal_name || "8it Cafe & Seri's Hub";
     const tradeName = company?.trade_name || "8it Cafe & Seri's Hub";
     const address = `${company?.address_line1 || 'Main Street Promenade'}${company?.address_line2 ? `, ${company.address_line2}` : ''}, ${company?.city || 'Kozhikode'}${company?.state_name ? `, ${company.state_name}` : ''} - ${company?.pincode || '673001'}`;
     const phone = company?.phone ? `Ph: ${company.phone}` : '';
     const gstin = company?.gstin || '32AAACA0000A1Z5';
-    const logoSrc = company?.logo_url || '/icons/icon.svg';
 
     const reportTypeTitle = frequency === 'daily' 
       ? 'DAILY BUSINESS PERFORMANCE REPORT' 
@@ -516,7 +796,6 @@ export function ReportPdfModal({
 
     <!-- Fulfillment Channels & Payment Collections Grid -->
     <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-bottom: 12px;">
-      <!-- Order Channels -->
       <div>
         <div class="section-title">Order Fulfillment Channels</div>
         <table class="data-table">
@@ -542,7 +821,6 @@ export function ReportPdfModal({
         </table>
       </div>
 
-      <!-- Payment Collections -->
       <div>
         <div class="section-title">Payment Tender Reconciliation</div>
         <table class="data-table">
@@ -692,7 +970,6 @@ export function ReportPdfModal({
 
   <script>
     window.onload = function() {
-      // Auto-trigger print dialog after assets load
       setTimeout(function() {
         window.print();
       }, 350);
@@ -702,15 +979,13 @@ export function ReportPdfModal({
 </html>
     `;
 
-    // Open clean print window
     const printWindow = window.open('', '_blank');
     if (printWindow) {
       printWindow.document.open();
       printWindow.document.write(reportHtml);
       printWindow.document.close();
     } else {
-      // If browser blocked popup, fallback to alert with guidance
-      alert('Popup was blocked by your browser. Please allow popups for this site to export PDF reports, or preview the document directly in the modal.');
+      alert('Popup was blocked by your browser. Please allow popups for this site, or use the "Download PDF File" button to download directly.');
       setPreviewMode(true);
     }
   };
@@ -726,34 +1001,45 @@ export function ReportPdfModal({
       title="📄 Generate Outlet Business Report (PDF)"
       maxWidth="780px"
       footer={
-        <div style={{ display: 'flex', justifyContent: 'space-between', width: '100%', alignItems: 'center' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', width: '100%', alignItems: 'center', flexWrap: 'wrap', gap: '8px' }}>
           <Button
             variant="outline"
             size="sm"
             onClick={() => setPreviewMode(!previewMode)}
           >
-            {previewMode ? '⚙️ Back to Settings' : '👁️ Preview Document'}
+            {previewMode ? '⚙️ Report Settings' : '👁️ Preview Document'}
           </Button>
 
-          <div style={{ display: 'flex', gap: '8px' }}>
+          <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
             <Button variant="outline" size="sm" onClick={onClose}>
               Close
             </Button>
             <Button
+              variant="outline"
+              size="sm"
+              onClick={handlePrintPreview}
+              disabled={loading || !reportData}
+              title="Open full A4 print layout"
+            >
+              🖨️ Print / Preview
+            </Button>
+            <Button
               variant="primary"
               size="sm"
-              onClick={handleGeneratePdf}
+              onClick={handleDirectPdfDownload}
               disabled={loading || !reportData}
-              style={{ minWidth: '160px' }}
+              style={{ minWidth: '170px', fontWeight: 700 }}
+              title="Download .pdf file directly to your device"
             >
-              🖨️ Generate & Save PDF
+              ⬇️ Download PDF File
             </Button>
           </div>
         </div>
       }
     >
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
         {error && <Alert type="error" message={error} />}
+        {downloadSuccess && <Alert type="success" message={downloadSuccess} />}
 
         {!previewMode ? (
           <>
@@ -924,7 +1210,7 @@ export function ReportPdfModal({
             </div>
 
             <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', background: 'rgba(13, 148, 136, 0.08)', padding: '10px 14px', borderRadius: '6px', borderLeft: '4px solid var(--color-primary)' }}>
-              💡 Click <strong>"Generate & Save PDF"</strong> to open the full executive report formatted for A4 printing and download as a high-quality PDF.
+              💡 Click <strong>"⬇️ Download PDF File"</strong> to directly save the official report as a .pdf file, or <strong>"🖨️ Print / Preview"</strong> to open the full printable sheet.
             </div>
           </>
         ) : (
@@ -942,7 +1228,6 @@ export function ReportPdfModal({
               </div>
             </div>
 
-            {/* Quick summary tables in preview */}
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginBottom: '14px', fontSize: '0.85rem' }}>
               <div style={{ border: '1px solid #e2e8f0', borderRadius: '6px', padding: '10px' }}>
                 <div style={{ fontWeight: 700, marginBottom: '6px', color: '#0f172a' }}>Financial Summary:</div>

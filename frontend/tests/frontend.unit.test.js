@@ -1554,5 +1554,13 @@ describe('Frontend POS & Administration Interface Tests', () => {
       assert.ok(modalCode.includes('Order Fulfillment Channels'), 'Includes fulfillment channels breakdown');
       assert.ok(modalCode.includes('Payment Tender Reconciliation'), 'Includes tender reconciliation');
     });
+
+    it('31.5 ReportPdfModal provides direct 1-click jsPDF binary download button', () => {
+      const modalCode = fs.readFileSync(path.join(__dirname, '../src/components/reports/ReportPdfModal.jsx'), 'utf8');
+      assert.ok(modalCode.includes('handleDirectPdfDownload'), 'Implements direct binary PDF download handler');
+      assert.ok(modalCode.includes('new jsPDF'), 'Instantiates jsPDF engine');
+      assert.ok(modalCode.includes('doc.save(documentTitle)'), 'Saves direct PDF file to device');
+      assert.ok(modalCode.includes('Download PDF File'), 'Renders prominent Download PDF File button');
+    });
   });
 });
